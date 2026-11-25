@@ -2,6 +2,8 @@
 
 这份文档供阶段审查。组件边界、应用版本与部署位置在对应阶段结合验证结果确定。
 
+阶段 1 的可运行原型位于 `frontend/`。Vue Router 按页面分包，Pinia 管理演示账号、餐次、图鉴收藏和好友关系。`api/mockRepository.ts` 按当前查看者进行单向授权投影，`api/mediaRepository.ts` 管理本地照片。真实 API、账号认证及安全访问控制在后端阶段接入。
+
 ```text
 浏览器 / Capacitor Android
             │ HTTPS

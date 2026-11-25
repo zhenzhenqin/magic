@@ -1,0 +1,95 @@
+<script setup lang="ts">
+import { BookOpen, Camera, HeartHandshake, LibraryBig, Sprout, UserRound } from 'lucide-vue-next'
+import { useRoute } from 'vue-router'
+import AvatarBadge from '../components/AvatarBadge.vue'
+import { useDiary } from '../stores/diary'
+
+const diary = useDiary()
+const route = useRoute()
+const navigation = [
+  { label: '手账', to: '/', icon: BookOpen, section: ['/', '/calendar'] },
+  { label: '图鉴', to: '/catalog', icon: LibraryBig, section: ['/catalog'] },
+  { label: '拍照', to: '/capture', icon: Camera, section: ['/capture'] },
+  { label: '饭搭子', to: '/friends', icon: HeartHandshake, section: ['/friends'] },
+  { label: '我的', to: '/me', icon: UserRound, section: ['/me'] },
+]
+const isActive = (section: string[]) => section.some(path => route.path === path || (path !== '/' && route.path.startsWith(path + '/')))
+</script>
+
+<template>
+  <a href="#main" class="skip-link">跳转到主要内容</a>
+  <div class="app-frame">
+    <aside class="rail">
+      <RouterLink to="/" class="brand" aria-label="FoodDiary 美食手账">
+        <span class="brand-mark"><Sprout aria-hidden="true" /></span>
+        <span>FoodDiary<small>美 食 手 账</small></span>
+      </RouterLink>
+      <nav class="navigation" aria-label="主导航">
+        <RouterLink v-for="item in navigation" :key="item.to" :to="item.to"
+          class="nav-link" :class="{ 'nav-active': isActive(item.section), 'nav-camera': item.to === '/capture' }"
+          :aria-current="isActive(item.section) ? 'page' : undefined">
+          <span class="nav-icon"><component :is="item.icon" aria-hidden="true" /></span>
+          <span>{{ item.label }}</span>
+        </RouterLink>
+      </nav>
+      <RouterLink to="/me" class="rail-account" aria-label="当前演示账号">
+        <AvatarBadge :user="diary.account" size="small" />
+        <span><strong>{{ diary.account.nickname }}</strong><small>演示账号</small></span>
+      </RouterLink>
+    </aside>
+    <header class="mobile-header">
+      <RouterLink to="/" class="brand" aria-label="FoodDiary 美食手账">
+        <span class="brand-mark"><Sprout aria-hidden="true" /></span><span>FoodDiary</span>
+      </RouterLink>
+      <RouterLink to="/me" class="mobile-account" :aria-label="'演示账号 ' + diary.account.nickname">
+        <AvatarBadge :user="diary.account" size="small" />
+      </RouterLink>
+    </header>
+    <main id="main" class="workspace" tabindex="-1">
+      <div class="page-shell">
+        <RouterView />
+      </div>
+    </main>
+  </div>
+</template>
+
+<style scoped>
+.skip-link { position: fixed; top: .4rem; left: .4rem; z-index: 6; padding: calc(var(--space-unit) * 4.8); border-radius: var(--radius-small); background: var(--color-sheet); transform: translateY(-200%); }
+.skip-link:focus { transform: none; }
+.app-frame { min-height: 100dvh; }
+.rail { width: var(--rail-width); padding: calc(var(--space-unit) * 16.8) calc(var(--space-unit) * 10.4) calc(var(--space-unit) * 12.8); position: fixed; inset: 0 auto 0 0; background: var(--color-rail); border-right: 1px solid var(--color-line); display: flex; flex-direction: column; z-index: 2; }
+.brand { display: inline-flex; align-items: center; gap: calc(var(--space-unit) * 5.6); align-self: start; font: 700 1.55rem/.98 var(--font-editorial); letter-spacing: -.045em; white-space: nowrap; }
+.brand-mark { width: 2.4rem; height: 2.4rem; display: grid; flex: none; place-items: center; border-radius: var(--radius-brand); background: var(--color-sage-deep); color: var(--color-sheet); transform: rotate(-6deg); }
+.brand-mark svg { width: 1.45rem; height: 1.45rem; stroke-width: 1.6; transform: rotate(6deg); }
+.brand small { display: block; margin-top: calc(var(--space-unit) * 2.8); color: var(--color-muted); font: 600 .69rem/1.2 var(--font-sans); letter-spacing: .04em; }
+.navigation { display: grid; gap: calc(var(--space-unit) * 3.04); margin-top: calc(var(--space-unit) * 25.2); }
+.nav-link { display: flex; align-items: center; gap: calc(var(--space-unit) * 7.2); padding: calc(var(--space-unit) * 2) calc(var(--space-unit) * 6.4); min-height: 3.05rem; border-radius: var(--radius-small); color: var(--color-muted); font-size: .95rem; font-weight: 650; transition: background .18s; }
+.nav-link:hover { background: var(--color-canvas-hover); color: var(--color-ink); }
+.nav-icon { display: grid; place-items: center; }
+.nav-icon svg { width: 1.2rem; height: 1.2rem; stroke-width: 1.65; }
+.nav-active { color: var(--color-sage-deep); background: var(--color-leaf-selected); }
+.nav-camera .nav-icon { color: var(--color-sage-deep); }
+.rail-account { display: flex; align-items: center; gap: calc(var(--space-unit) * 5.2); border-top: 1px solid var(--color-line); padding: calc(var(--space-unit) * 7.2) calc(var(--space-unit) * 2) 0; margin-top: auto; }
+.rail-account strong, .rail-account small { display: block; font-size: .875rem; }
+.rail-account small { font-size: .75rem; color: var(--color-muted); }
+.workspace { margin-left: var(--rail-width); }
+.page-shell { width: 100%; max-width: var(--page-width); margin-inline: auto; padding: calc(var(--space-unit) * 20.8) clamp(calc(var(--space-unit) * 12), 4.1vw, calc(var(--space-unit) * 35.2)) calc(var(--space-unit) * 24); }
+.mobile-header { display: none; }
+@media (max-width: 900px) {
+  .rail { display: contents; }
+  .rail > .brand, .rail-account { display: none; }
+  .workspace { margin: 0; }
+  .mobile-header { display: flex; justify-content: space-between; align-items: center; min-height: 4.2rem; padding: max(calc(var(--space-unit) * 5.2), env(safe-area-inset-top)) max(calc(var(--space-unit) * 9.2), env(safe-area-inset-right)) calc(var(--space-unit) * 4.4) max(calc(var(--space-unit) * 9.2), env(safe-area-inset-left)); }
+  .mobile-header .brand { align-self: center; font-size: 1.28rem; }
+  .mobile-header .brand-mark { width: 1.95rem; height: 1.95rem; }
+  .mobile-header .brand-mark svg { width: 1.16rem; height: 1.16rem; }
+  .mobile-account { display: grid; place-items: center; min-width: var(--tap-size); min-height: var(--tap-size); }
+  .navigation { position: fixed; z-index: 4; inset: auto 0 0; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 0; min-height: var(--mobile-nav-height); align-items: center; padding: calc(var(--space-unit) * 2) max(calc(var(--space-unit) * 2.8), env(safe-area-inset-right)) max(calc(var(--space-unit) * 2.8), env(safe-area-inset-bottom)) max(calc(var(--space-unit) * 2.8), env(safe-area-inset-left)); border-top: 1px solid var(--color-line); background: var(--color-sheet); }
+  .nav-link { min-width: 0; flex-direction: column; justify-content: center; gap: calc(var(--space-unit) * 1.76); padding: calc(var(--space-unit) * 2); font-size: .72rem; line-height: 1.2; white-space: nowrap; margin-inline: calc(var(--space-unit) * 0.96); }
+  .nav-active { background: transparent; font-weight: 800; }
+  .nav-active .nav-icon { background: var(--color-leaf); border-radius: var(--radius-pill); padding: calc(var(--space-unit) * 1.92) calc(var(--space-unit) * 4.24); }
+  .nav-camera .nav-icon { color: var(--color-sheet); background: var(--color-sage-deep); padding: calc(var(--space-unit) * 4.4) calc(var(--space-unit) * 5.2); border-radius: var(--radius-card); margin-top: -calc(var(--space-unit) * 6.8); }
+  .nav-camera .nav-icon svg { width: 1.25rem; height: 1.25rem; }
+  .page-shell { padding: calc(var(--space-unit) * 8) max(calc(var(--space-unit) * 8.8), env(safe-area-inset-right)) calc(var(--mobile-nav-height) + env(safe-area-inset-bottom) + calc(var(--space-unit) * 10.4)) max(calc(var(--space-unit) * 8.8), env(safe-area-inset-left)); }
+}
+</style>

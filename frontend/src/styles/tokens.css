@@ -1,0 +1,55 @@
+@theme static {
+  --color-paper: #f8f6ef;
+  --color-sheet: #fffdf7;
+  --color-ink: #353b32;
+  --color-muted: #67695e;
+  --color-sage: #879b75;
+  --color-sage-deep: #45583b;
+  --color-leaf: #e4ebd9;
+  --color-butter: #f3e6c6;
+  --color-apricot: #ebc8aa;
+  --color-line: #e7e1d3;
+  --color-error: #9c3c38;
+  --color-text-strong: #5a604b;
+  --color-primary-hover: #33442c;
+  --color-earth: #694e31;
+  --color-terracotta: #8a5145;
+  --color-control-line: #aeb9a5;
+  --color-line-leaf: #d5dfcc;
+  --color-line-rose: #e5c5bd;
+  --color-line-warm: #e8dfc7;
+  --color-leaf-selected: #e2e8d6;
+  --color-leaf-pale: #edf0e5;
+  --color-canvas-hover: #efebdf;
+  --color-paper-warm: #efe8d7;
+  --color-rail: #f2efe5;
+  --color-peach-soft: #f3e7df;
+  --color-rose-soft: #f3e1da;
+  --color-sheet-glaze: #fffdf8df;
+  --color-peach-glaze: #eeccac90;
+  --color-control-off: #dad7cc;
+  --color-backdrop: #292c2366;
+  --font-sans: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-serif: "Diary Serif", "Songti SC", "SimSun", Georgia, serif;
+  --font-editorial: Georgia, "Times New Roman", serif;
+  --radius-small: 0.65rem;
+  --radius-card: 1.05rem;
+  --radius-paper: 1.45rem;
+  --radius-pill: 999px;
+  --radius-round: 50%;
+  --radius-brand: 35%;
+  --shadow-paper: 0 2px 16px #51472e0b;
+  --shadow-control: 0 1px 3px #39402c38;
+  --drop-shadow-sticker: 0 4px 3px #46361c29;
+  --ease-gentle: cubic-bezier(.22,.61,.36,1);
+}
+
+:root {
+  --space-unit: .125rem;
+  --page-width: 76rem;
+  --rail-width: 14rem;
+  --mobile-nav-height: 4.4rem;
+  --tap-size: 2.75rem;
+  --paper-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='paper'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' opacity='.12' filter='url(%23paper)'/%3E%3C/svg%3E");
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2345583b' stroke-width='1.5'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+}

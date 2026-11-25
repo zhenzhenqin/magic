@@ -14,3 +14,16 @@
 | 部署 | Docker Compose + Nginx，结合试运行确定部署位置 | 现有主机 Compose 可用，旧业务停服后 80/443 空闲、可用内存约 1.5 GiB。阶段 8 依据压测、安全支持、入口和运维授权确定部署方案 |
 
 版本依据。[Vite 8 发布说明](https://vite.dev/blog/announcing-vite8) · [Capacitor 8 环境要求](https://capacitorjs.com/docs/getting-started/environment-setup) · [Capacitor 8 Android 迁移指南](https://capacitorjs.com/docs/updating/8-0) · [MySQL LTS 说明](https://dev.mysql.com/doc/refman/8.4/en/mysql-releases.html) · [rembg 依赖与平台配置](https://github.com/danielgatis/rembg/blob/main/pyproject.toml)
+
+## 阶段 1
+
+| 决策 | 实施 |
+| --- | --- |
+| Vue 原型 | Vue 3.5.46、TypeScript 5.9.3、Vite 8.3.8、Vue Router 4.6.5、Pinia 3.0.4 和 Tailwind CSS 4.3.5。通过项目的 pnpm 锁文件复现 |
+| 浏览器持久化 | 类型化 Mock Repository 统一提供记录和共享投影。localStorage 保存小体积演示数据，IndexedDB 保存重新编码的照片 Blob。账号切换复用同一套授权模型 |
+| 响应式和图片 | 手机底部导航预留系统安全区，桌面使用侧边栏和受约束的内容列。12 张透明 WebP 本地打包，标题用本地 Noto Serif SC 子集 |
+| 当前阶段的缓存 | 通过 `scripts/setup-dev-env.ps1` 使 pnpm store、npm cache、`PLAYWRIGHT_BROWSERS_PATH` 与 `TEMP / TMP / TMPDIR` 生效到 `D:/DevEnv`。Vite 缓存、依赖、构建、测试结果及截图留在 D 盘项目。Playwright 复用现有 Chrome |
+| 后续 Python 和 Android 磁盘 | Python 虚拟环境设在 D 盘项目，`PIP_CACHE_DIR=D:/DevEnv/pip-cache`。SDK 使用 `D:/DevEnv/Android/Sdk`，模拟器数据放 `D:/DevEnv/Android/avd`，`GRADLE_USER_HOME=D:/DevEnv/gradle`。APK 和测试产物放在 D 盘 |
+| 后续模型、Docker 与 WSL | Hugging Face、rembg 和 ONNX 缓存按工具支持的变量配置到 `D:/DevEnv/models`。使用 Docker Desktop 官方支持的方法把数据文件设到 `D:/DevEnv/docker`，新增 WSL 发行版优先在 D 盘存放虚拟磁盘。已有工具继续复用 |
+
+后续目录按需创建。大型资源下载、解压、构建和测试使用 D 盘路径。

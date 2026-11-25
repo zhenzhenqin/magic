@@ -17,6 +17,8 @@ node_modules/
 dist/
 .vite/
 coverage/
+playwright-report/
+test-results/
 
 # Python environments and cache
 .venv/

@@ -20,3 +20,12 @@
 - 上传时校验实际图片格式、文件大小和解码尺寸。存储使用服务端生成的对象标识，私有媒体放在 Web 静态目录之外。向外部识别服务仅发送任务所需内容，清除不需要的元数据，日志避免记录图片、个人饮食详情及凭据。
 - 实际密码、API Key、SSH 私钥和 APK 签名密钥仅经本地安全存储或部署密钥管理交付。`.env.example` 保留公开默认值及空白敏感字段。前端及 APK 禁止内置服务端密钥。
 - 阶段 0 的服务器权限仅用于只读盘点。部署、服务变更、端口开放、防火墙变更和 SDK 或大型模型安装均按用户授权的阶段与范围操作。
+
+## D 盘优先
+
+- 继续在现有 D 盘项目中开发。项目依赖、Vite 缓存、临时文件、构建产物、图片、字体、截图和测试结果都留在 D 盘。业务代码使用相对路径或环境参数。
+- 用 `scripts/setup-dev-env.ps1` 为当前开发进程设置 `D:/DevEnv/pnpm-store`、`npm-cache`、`playwright` 和 `tmp`。安装前核验实际缓存路径。优先复用已安装程序和浏览器，测试创建单独的临时浏览器配置。
+- 各阶段记录 C、D 盘开始和完成的可用空间。依赖安装、浏览器下载、构建和资源下载后复查。发现与项目相关的 C 盘新增占用超过 500 MiB 时暂停排查。C 盘低于 10 GiB 时暂停可能大量写入 C 盘的安装，并汇报。
+- 后续 Python 虚拟环境保留在项目内，`PIP_CACHE_DIR` 使用 `D:/DevEnv/pip-cache`。Android SDK 使用 `D:/DevEnv/Android/Sdk`，AVD 使用 `D:/DevEnv/Android/avd`，`GRADLE_USER_HOME` 使用 `D:/DevEnv/gradle`。APK 和 Android 测试产物保留在 D 盘。
+- 在需要时把 Hugging Face、rembg 和 ONNX 缓存按各自支持的变量配置在 `D:/DevEnv/models` 下。Docker Desktop 数据磁盘使用官方支持方式配置到 `D:/DevEnv/docker`，新增 WSL 发行版优先使用 D 盘虚拟磁盘。已有工具程序本体可继续复用。
+- 仅为当前阶段创建所需目录。未经授权不得修改 Windows 系统目录或全局环境、迁移或注销现有 WSL、清理其他项目或 Docker 数据，以及通过目录链接迁移系统文件。
