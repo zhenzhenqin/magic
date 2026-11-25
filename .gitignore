@@ -1,0 +1,48 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+keystore.properties
+id_rsa
+id_ed25519
+
+# Node and frontend build output
+node_modules/
+dist/
+.vite/
+coverage/
+
+# Python environments and cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Android and Gradle output
+.gradle/
+.idea/
+local.properties
+build/
+*.apk
+*.aab
+
+# Local runtime data and logs
+/data/
+/uploads/
+/backups/
+/secrets/
+*.log
+*.onnx
+
+# OS metadata
+.DS_Store
+Thumbs.db
