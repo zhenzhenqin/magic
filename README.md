@@ -25,6 +25,8 @@ API 模式提供真实账户、个人手账、饮食月历、每日摘要及私�
 
 在对应地域的阿里云百炼工作空间创建 API Key。在仓库根目录的忽略文件 `.env` 或后端进程环境设置 `AI_ENABLED=true`、`AI_PROVIDER=qwen`、`AI_BASE_URL`、`AI_API_KEY` 和 `AI_MODEL=qwen3-vl-flash`。Base URL 使用工作空间的 OpenAI 兼容地址，结尾为 `/compatible-mode/v1`。若新建 `.env`，同时使用现有开发 `JWT_SECRET`，或为独立开发库生成新的高熵密钥。启动前确认 `APP_ORIGINS` 对应实际端口。[百炼 API Key 指引](https://www.alibabacloud.com/help/en/model-studio/get-api-key)
 
+真实请求默认被累计上限 `AI_QWEN_CUMULATIVE_LIMIT=0` 禁止。获得用户批准后，在独立联调库写入明确的累计尝试上限。浏览器能在同账号下恢复上次任务，Worker 离线时可继续手动记录。[联调素材和脚本](docs/ai-benchmark/README.md)
+
 ```powershell
 .\scripts\setup-backend.ps1 -Action Migrate
 .\scripts\start-dev.ps1 -WithAiWorker -FrontendPort 15175 -BackendPort 18021
@@ -49,6 +51,8 @@ Demo 只启动前端。正式构建默认 API 模式，通过 `-Mode Demo` 可�
 .\scripts\setup-dev-env.ps1 -Action Test -Mode Demo -Port 15174
 .\scripts\setup-dev-env.ps1 -Action TestApi -Port 15173 -BackendPort 18020
 .\scripts\setup-dev-env.ps1 -Action TestAi -Port 15173 -BackendPort 18020
+.\scripts\setup-dev-env.ps1 -Action TestAiRecovery -Port 15173 -BackendPort 18020
+.\scripts\setup-dev-env.ps1 -Action TestAiOffline -Port 15173 -BackendPort 18020
 .\scripts\setup-dev-env.ps1 -Action ScreenshotsDiary -Port 15173 -BackendPort 18020
 .\scripts\setup-dev-env.ps1 -Action ScreenshotsAi -Port 15173 -BackendPort 18020
 ```

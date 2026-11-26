@@ -55,6 +55,7 @@ export interface Daily {
   meals: number
   items: number
   nutrition: Record<NutrientKey, { value: number | null; complete: boolean; known_items: number }>
+  nutrition_sources: Record<NutrientKey, { estimated: number; edited: number; simulated: number }>
 }
 
 export function useDiaryApi() {

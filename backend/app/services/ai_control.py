@@ -1,0 +1,49 @@
+from datetime import timedelta
+from hashlib import sha256
+
+from sqlalchemy import select, update
+from sqlalchemy.dialects.sqlite import insert
+
+from app.models.ai import AiCallBudget, AiWorkerHeartbeat
+
+HEARTBEAT_INTERVAL = 3
+HEARTBEAT_TTL = 12
+
+
+def worker_identity(settings) -> str:
+    fields = (settings.ai_provider, settings.ai_model_name, settings.ai_base_url)
+    return sha256("\n".join(fields).encode()).hexdigest()
+
+
+def worker_online(db, settings, now) -> bool:
+    if not settings.ai_available:
+        return False
+    return db.scalar(select(AiWorkerHeartbeat.checked_at).where(
+        AiWorkerHeartbeat.configuration == worker_identity(settings),
+        AiWorkerHeartbeat.checked_at > now - timedelta(seconds=HEARTBEAT_TTL),
+    )) is not None
+
+
+def mark_heartbeat(db, settings, now):
+    statement = insert(AiWorkerHeartbeat).values(configuration=worker_identity(settings), checked_at=now)
+    db.execute(statement.on_conflict_do_update(index_elements=["configuration"], set_={"checked_at": now}))
+
+
+def cumulative_exhausted(db, settings) -> bool:
+    if settings.ai_provider != "qwen":
+        return False
+    spent = db.scalar(select(AiCallBudget.spent).where(AiCallBudget.provider == "qwen"))
+    return spent is None or spent >= settings.ai_qwen_cumulative_limit
+
+
+def reserve_qwen_call(db, settings) -> bool:
+    result = db.execute(update(AiCallBudget).where(
+        AiCallBudget.provider == "qwen", AiCallBudget.spent < settings.ai_qwen_cumulative_limit,
+    ).values(spent=AiCallBudget.spent + 1))
+    return result.rowcount == 1
+
+
+def refund_qwen_call(db):
+    db.execute(update(AiCallBudget).where(
+        AiCallBudget.provider == "qwen", AiCallBudget.spent > 0,
+    ).values(spent=AiCallBudget.spent - 1))

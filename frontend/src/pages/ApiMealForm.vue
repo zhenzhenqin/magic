@@ -23,6 +23,7 @@ interface DraftItem extends MealItemInput {
   source?: 'manual' | 'ai' | 'ai_edited'
   simulated?: boolean
   uncertainty?: string | null
+  aiMedia?: string[]
 }
 const route = useRoute()
 const router = useRouter()
@@ -46,8 +47,9 @@ const draft = reactive(emptyDraft())
 const photos = ref<DraftPhoto[]>([])
 const {
   capabilities, capabilityError, maxImages, selected: selectedPhotos, picked, job, candidates, applied, waiting,
-  error: recognitionError, jobMessage, dialog, canResume, togglePhoto, run,
-} = useMealRecognition(() => photos.value, () => identifier.value)
+  error: recognitionError, jobMessage, dialog, canResume, togglePhoto, run, recovered, canRestore, restore,
+  recoveryError, explicitlyRestored, workerOnline, refreshRecovery,
+} = useMealRecognition(() => photos.value, () => identifier.value, value => { photos.value = value })
 const mayCancel = computed(() => job.value?.status === 'pending' || job.value?.status === 'running')
 const isEmpty = (item: DraftItem) => !item.id && !item.ai_reference && !item.food_name.trim()
   && !item.category?.trim() && !item.note.trim() && Object.keys(fields).every(key => item[key as keyof typeof fields] == null)
@@ -107,8 +109,14 @@ function choose(event: Event) {
 }
 
 function removePhoto(index: number) {
-  dispose(photos.value[index])
+  const photo = photos.value[index]
+  dispose(photo)
   photos.value.splice(index, 1)
+  if (photo.id) {
+    for (const item of draft.items) {
+      if (item.aiMedia?.includes(photo.id)) clearReference(item)
+    }
+  }
 }
 
 function applyCandidates(mode: 'append' | 'replace') {
@@ -118,17 +126,19 @@ function applyCandidates(mode: 'append' | 'replace') {
   if (existing.length + candidates.value.length > 30) return
   draft.items = [...existing, ...candidates.value.map(({ id, uncertainty, ...candidate }: AiCandidate): DraftItem => ({
     ...candidate, draftKey: id, uncertainty, ai_reference: { job_id: recognized.id, candidate_id: id },
-    simulated: recognized.simulated, source: 'ai', note: '',
+    simulated: recognized.simulated, source: 'ai', note: '', aiMedia: recognized.media_ids,
   }))]
   applied.value = true
 }
 
 watch(candidates, foods => {
-  if (foods.length && !hasExistingFood.value && !progress.value && !saveAttempt?.uncertain) applyCandidates('replace')
+  if (foods.length && !explicitlyRestored.value && !hasExistingFood.value && !progress.value && !saveAttempt?.uncertain) {
+    applyCandidates('replace')
+  }
 })
 
 function startRecognition() {
-  if (capabilities.value?.available && selectedPhotos.value.length && !waiting.value && !progress.value) {
+  if (capabilities.value?.available && workerOnline.value && selectedPhotos.value.length && !waiting.value && !progress.value) {
     dialog.value = 'start'
   }
 }
@@ -136,7 +146,7 @@ function startRecognition() {
 function collect(): MealInput {
   return {
     ...draft, media_ids: photos.value.map(photo => photo.id).filter((id): id is string => !!id),
-    items: draft.items.map(({ draftKey: _key, source: _source, simulated: _simulated, uncertainty: _uncertainty, ...item }) => {
+    items: draft.items.map(({ draftKey: _key, source: _source, simulated: _simulated, uncertainty: _uncertainty, aiMedia: _media, ...item }) => {
       const clean = { ...item, food_name: item.food_name.trim(), category: item.category?.trim() || null }
       for (const key of Object.keys(fields) as (keyof typeof fields)[]) {
         clean[key] = typeof clean[key] === 'number' ? clean[key] : null
@@ -189,20 +199,22 @@ async function submit() {
     if (saveAttempt && failure instanceof ApiError && failure.status > 0 && failure.status < 500) saveAttempt.uncertain = false
     error.value = authMessage(failure)
     maySaveWithoutSource.value = failure instanceof ApiError
-      && ['ai_job_not_found', 'ai_candidate_not_found', 'ai_candidate_unavailable', 'ai_candidate_used'].includes(failure.code)
+      && ['ai_job_not_found', 'ai_candidate_not_found', 'ai_candidate_unavailable', 'ai_candidate_used', 'ai_candidate_context'].includes(failure.code)
   } finally {
     if (version === formVersion) progress.value = ''
   }
 }
 
+function clearReference(item: DraftItem) {
+  delete item.ai_reference
+  delete item.source
+  delete item.uncertainty
+  delete item.simulated
+  delete item.aiMedia
+}
+
 function keepAsManual() {
-  for (const item of draft.items) {
-    if (!item.ai_reference) continue
-    delete item.ai_reference
-    delete item.source
-    delete item.uncertainty
-    delete item.simulated
-  }
+  draft.items.filter(item => item.ai_reference).forEach(clearReference)
   error.value = ''
   maySaveWithoutSource.value = false
 }
@@ -238,19 +250,34 @@ function keepAsManual() {
           <button type="button" class="button" :disabled="!!progress || photos.length >= 5" @click="camera?.click()"><Camera /> 拍一张</button>
         </div>
         <p v-if="!photos.length" class="caption">也可以只填写食物信息。</p>
-        <div v-else class="recognition form-stack" aria-label="AI 食物识别">
+        <div v-if="recovered" class="recognition form-stack">
+          <p class="caption" role="status">{{ ['pending', 'running'].includes(recovered.status) ? '有一项识别尚未完成。' : '找到了上次的识别任务。' }}</p>
+          <p v-if="!canRestore" class="caption">当前餐次或照片与上次不匹配，恢复前请核对。</p>
+          <div class="toolbar">
+            <button v-if="canRestore" type="button" class="button" :disabled="waiting || !!progress" @click="restore">恢复这次识别</button>
+            <button v-if="['pending', 'running'].includes(recovered.status)" type="button" class="text-action"
+              :disabled="waiting" @click="run('cancel', recovered)">取消上次识别</button>
+          </div>
+        </div>
+        <div v-else-if="recoveryError" class="toolbar">
+          <button type="button" class="text-action" @click="refreshRecovery">重新检查未完成的识别</button>
+        </div>
+        <div v-if="photos.length || (capabilities?.available && workerOnline === false)" class="recognition form-stack" aria-label="AI 食物识别">
           <p v-if="capabilities && !capabilities.available" class="caption">AI 识别暂不可用，你仍可以手动记录。</p>
           <p v-else-if="capabilityError" class="caption">暂时无法检查 AI 识别，仍可手动记录。</p>
           <template v-else-if="capabilities?.available">
             <p v-if="capabilities.simulated" class="caption">本地模拟识别 · 使用示例结果</p>
-            <p v-if="waiting && !recognitionError" class="caption ai-wait" role="status"><LoaderCircle /> 正在看看你今天吃了什么……</p>
+            <p v-if="workerOnline === false" class="caption" role="status">
+              {{ mayCancel ? '识别服务暂未连接，任务已保留，可以继续手动记录。' : '识别服务暂未连接，可以继续手动记录。' }}
+            </p>
+            <p v-else-if="waiting && !recognitionError" class="caption ai-wait" role="status"><LoaderCircle /> 正在看看你今天吃了什么……</p>
             <p v-if="recognitionError || jobMessage" class="caption" role="status">{{ recognitionError || jobMessage }}</p>
             <div class="toolbar">
-              <button v-if="!mayCancel && !job?.can_retry && !candidates.length && !applied" type="button" class="button"
-                :disabled="waiting || !!progress || !selectedPhotos.length" @click="startRecognition"><Sparkles /> AI 识别</button>
+              <button v-if="!mayCancel && !job?.can_retry" type="button" class="button"
+                :disabled="!workerOnline || waiting || !!progress || !selectedPhotos.length" @click="startRecognition"><Sparkles /> {{ job?.status === 'succeeded' ? '重新识别' : 'AI 识别' }}</button>
               <button v-if="mayCancel" type="button" class="text-action" @click="run('cancel')">取消识别</button>
               <button v-if="canResume" type="button" class="button" :disabled="waiting" @click="run('resume')">继续查看结果</button>
-              <button v-if="job?.can_retry" type="button" class="button" :disabled="waiting || !!progress" @click="dialog = 'retry'">重试识别</button>
+              <button v-if="job?.can_retry" type="button" class="button" :disabled="!workerOnline || waiting || !!progress" @click="dialog = 'retry'">重试识别</button>
             </div>
             <div v-if="candidates.length" class="form-stack">
               <p>找到了 {{ candidates.length }} 样美食</p>

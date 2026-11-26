@@ -8,6 +8,9 @@ export interface AiJob {
   simulated: boolean
   error_code: string | null
   can_retry: boolean
+  media_ids: string[]
+  form_meal_id: string | null
+  worker_online: boolean
   result: {
     schema_version: '1'
     status: 'recognized' | 'no_food' | 'unrecognized'
@@ -22,6 +25,15 @@ interface Capabilities {
   max_images: number
   consent_version: string
   privacy_url: string | null
+  worker_online: boolean
+}
+
+export interface AiRecoveryQuery {
+  [key: string]: string | undefined
+  form_meal_id?: string
+  job_id?: string
+  request_key?: string
+  retry_key?: string
 }
 
 export function useAiApi() {
@@ -29,9 +41,11 @@ export function useAiApi() {
   const path = (id: string) => '/ai/jobs/' + encodeURIComponent(id)
   return {
     capabilities: (signal: AbortSignal) => api<Capabilities>('/ai/capabilities', { signal }),
-    create: (ids: string[], version: string, key: string) => api<AiJob>('/ai/jobs', {
-      method: 'POST', body: { media_ids: ids, consent_version: version }, headers: { 'Idempotency-Key': key },
+    create: (ids: string[], version: string, key: string, formId?: string) => api<AiJob>('/ai/jobs', {
+      method: 'POST', body: { media_ids: ids, consent_version: version, form_meal_id: formId },
+      headers: { 'Idempotency-Key': key },
     }),
+    recover: (query: AiRecoveryQuery, signal: AbortSignal) => api<AiJob | null>('/ai/jobs/recover', { query, signal }),
     job: (id: string, signal: AbortSignal) => api<AiJob>(path(id), { signal }),
     cancel: (id: string) => api<AiJob>(path(id) + '/cancel', { method: 'POST' }),
     retry: (id: string, version: string, acceptUnknown: boolean, key: string) => api<AiJob>(path(id) + '/retry', {

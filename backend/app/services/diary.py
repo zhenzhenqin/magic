@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.config import Settings
 from app.core.database import utcnow
 from app.core.exceptions import ApiError
-from app.diary_schemas import CalendarDay, CalendarView, DailyView, ItemView, MealInput, MealPage, MealView, MediaView, NutrientSummary
+from app.diary_schemas import CalendarDay, CalendarView, DailyView, ItemView, MealInput, MealPage, MealView, MediaView, NutrientSources, NutrientSummary
 from app.models.diary import Meal, MealItem, MealMedia, MealRequest, MediaAsset
 from app.services.meal_sources import estimate_digest, item_values, verify_candidate
 from app.services.storage import MEDIA_MISSING, lock_owner
@@ -73,6 +73,7 @@ def update_items(db: Session, settings: Settings, owner: str, identifier: str, d
     if len(explicit) != len(set(explicit)):
         raise ApiError(422, "meal_item_duplicate", "同一食物明细只能提交一次。")
     kept, candidates = set(), set()
+    media_ids = {str(media) for media in data.media_ids}
     ordered = []
     for item in data.items:
         values = item_values(item)
@@ -87,7 +88,7 @@ def update_items(db: Session, settings: Settings, owner: str, identifier: str, d
                 raise ApiError(422, "meal_item_reference", "已有食物明细的识别来源不能更换。")
             lineage = {}
         else:
-            lineage = verify_candidate(db, settings, owner, identifier, item.ai_reference) if item.ai_reference else {}
+            lineage = verify_candidate(db, settings, owner, identifier, media_ids, item.ai_reference) if item.ai_reference else {}
             row = MealItem(id=str(uuid4()), meal_id=identifier, source="manual", **lineage)
         if row.ai_candidate_id:
             if row.ai_candidate_id in candidates:
@@ -218,13 +219,19 @@ def daily(db: Session, owner: str, day: date) -> DailyView:
     terms = []
     for name in NUTRIENTS:
         column = getattr(MealItem, name)
-        terms.extend((func.sum(column), func.count(column)))
+        terms.extend((func.sum(column), func.count(column),
+                      func.count(column).filter(MealItem.source == "ai"),
+                      func.count(column).filter(MealItem.source == "ai_edited"),
+                      func.count(column).filter(MealItem.ai_provider == "fake")))
     totals = db.execute(select(func.count(MealItem.id), *terms).join(Meal)
                         .where(Meal.user_id == owner, Meal.local_date == day)).one()
     count = totals[0]
     nutrition = {}
+    nutrition_sources = {}
     for index, name in enumerate(NUTRIENTS):
-        value, known = totals[1 + index * 2:3 + index * 2]
+        offset = 1 + index * 5
+        value, known, estimated, edited, simulated = totals[offset:offset + 5]
         nutrition[name] = NutrientSummary(value=value, known_items=known, complete=count > 0 and known == count)
+        nutrition_sources[name] = NutrientSources(estimated=estimated, edited=edited, simulated=simulated)
     meals = db.scalar(select(func.count()).select_from(Meal).where(Meal.user_id == owner, Meal.local_date == day))
-    return DailyView(date=day, meals=meals, items=count, nutrition=nutrition)
+    return DailyView(date=day, meals=meals, items=count, nutrition=nutrition, nutrition_sources=nutrition_sources)

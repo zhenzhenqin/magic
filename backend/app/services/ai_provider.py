@@ -12,7 +12,7 @@ from PIL import Image
 from pydantic import ValidationError
 
 from app.ai_schemas import Recognition
-from app.core.config import Settings
+from app.core.config import Settings, validate_qwen_base_url
 from app.services.ai_prompt import SYSTEM_PROMPT
 
 MAX_IMAGE_BYTES = 640 * 1024
@@ -84,6 +84,10 @@ class QwenVisionProvider:
         settings = self.settings
         if not settings.ai_available or settings.ai_provider != "qwen" or not settings.ai_api_key:
             raise ProviderError("ai_unavailable", sent=False)
+        try:
+            endpoint = validate_qwen_base_url(settings.ai_base_url)
+        except ValueError:
+            raise ProviderError("ai_configuration_changed", sent=False) from None
         content = [
             {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii")}}
             for data in images
@@ -102,7 +106,7 @@ class QwenVisionProvider:
                 timeout=timeout, trust_env=False, follow_redirects=False, transport=self.transport,
             ) as client:
                 async with client.stream(
-                    "POST", settings.ai_base_url + "/chat/completions", json=body,
+                    "POST", endpoint + "/chat/completions", json=body,
                     headers={"Authorization": "Bearer " + secret},
                 ) as response:
                     upstream = response.headers.get("x-request-id", "")

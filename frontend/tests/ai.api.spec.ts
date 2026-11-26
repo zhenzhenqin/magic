@@ -154,11 +154,15 @@ test('@fake-ai 用户取消后停止轮询并保存手动记录', async ({ page 
   await save(page, '午餐手动记录')
 })
 
-test('@fake-ai 创建回包丢失后按同一幂等标识恢复任务', async ({ page }) => {
+test('@fake-ai 创建回包丢失后以原幂等标识只读恢复任务', async ({ page }) => {
   await signIn(page, 'ai_network_retry')
   await openForm(page, [tomato])
   const path = '**/api/v1/ai/jobs'
   let recovered: AiJob | undefined
+  let writes = 0
+  page.on('request', request => {
+    if (request.method() === 'POST' && request.url().endsWith('/ai/jobs')) writes++
+  })
   await page.route(path, async route => {
     const response = await route.fetch()
     expect(response.status()).toBe(202)
@@ -166,11 +170,12 @@ test('@fake-ai 创建回包丢失后按同一幂等标识恢复任务', async ({
     await route.abort('failed')
   }, { times: 1 })
   await start(page).click()
+  const lookup = page.waitForResponse(response => response.url().includes('/ai/jobs/recover?request_key='))
   await confirm(page).click()
-  await expect(page.getByText('无法连接 FoodDiary 服务，请检查连接后重试。')).toBeVisible()
-  const replay = await recognize(page)
+  const replay = await (await lookup).json()
   expect(replay.id).toBe(recovered?.id)
   await expect(foods(page).nth(1)).toHaveValue('白米饭')
+  expect(writes).toBe(1)
 })
 
 test('@fake-ai 更换照片时拒绝应用已经在途的旧结果', async ({ page }) => {
@@ -288,4 +293,116 @@ test('@fake-ai @screenshots 百炼隐私说明通过受控能力响应检查，�
   await shot(page, '10-qwen-consent-ui-check.jpg', false)
   await page.getByRole('button', { name: '先手动记录' }).click()
   expect(writes).toBe(0)
+})
+
+const recoveryShots = new URL('../../docs/screenshots/phase-4.1/', import.meta.url)
+async function recoveryShot(page: Page, name: string) {
+  await mkdir(recoveryShots, { recursive: true })
+  await page.setViewportSize({ width: 1280, height: 920 })
+  await page.evaluate(async () => document.fonts.ready)
+  await page.screenshot({ path: fileURLToPath(new URL(name + '.jpg', recoveryShots)),
+    fullPage: false, type: 'jpeg', quality: 84, animations: 'disabled' })
+}
+
+test('@fake-ai @phase41 刷新和关闭标签页后恢复原照片，候选须显式采用', async ({ page, context }) => {
+  await signIn(page, 'ai41_refresh')
+  await openForm(page, [tomato])
+  await recognize(page)
+  await page.reload()
+  await expect(page.getByRole('button', { name: '恢复这次识别' })).toBeVisible()
+  await expect(foods(page).first()).toHaveValue('')
+  await recoveryShot(page, '01-restore-after-reload')
+  await page.close()
+  const reopened = await context.newPage()
+  await openForm(reopened, [])
+  await reopened.getByRole('button', { name: '恢复这次识别' }).click()
+  await expect(reopened.getByText('找到了 2 样美食')).toBeVisible()
+  await expect(foods(reopened).first()).toHaveValue('')
+  const restoredPhoto = reopened.getByRole('img', { name: '已有照片 1' })
+  await expect(restoredPhoto).toBeVisible()
+  await expect.poll(() => restoredPhoto.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+  await recoveryShot(reopened, '02-recovered-before-apply')
+  await reopened.getByRole('button', { name: '追加到表单' }).click()
+  expect((await save(reopened, '白米饭')).items[1].source).toBe('ai')
+})
+
+test('@fake-ai @phase41 网络中断后只恢复轮询，保留一次创建', async ({ page }) => {
+  await signIn(page, 'ai41_network')
+  await openForm(page, [tomato])
+  let writes = 0
+  page.on('request', request => {
+    if (request.method() === 'POST' && request.url().endsWith('/ai/jobs')) writes++
+  })
+  await page.route(/\/ai\/jobs\/[a-f0-9-]{36}$/, route => route.abort('failed'), { times: 1 })
+  await recognize(page)
+  await expect(page.getByText('连接暂时中断，正在重新查看任务。')).toBeVisible()
+  await expect(foods(page).nth(1)).toHaveValue('白米饭')
+  expect(writes).toBe(1)
+})
+
+test('@fake-ai @phase41 重试回包丢失后按原重试标识恢复', async ({ page }) => {
+  await signIn(page, 'ai41_retry')
+  await openForm(page, [])
+  await chooseInvalidFixture(page)
+  const job = await recognize(page)
+  await expect(page.getByText('这次识别结果无法使用，你仍可以手动记录。')).toBeVisible()
+  let writes = 0
+  await page.route('**/ai/jobs/' + job.id + '/retry', async route => {
+    writes++
+    expect((await route.fetch()).status()).toBe(202)
+    await route.abort('failed')
+  })
+  await page.getByRole('button', { name: '重试识别' }).click()
+  const recovered = page.waitForResponse(response => response.url().includes('retry_key='))
+  await page.getByRole('button', { name: '同意并重试' }).click()
+  expect((await (await recovered).json()).id).toBe(job.id)
+  await expect(page.getByText('这次识别结果无法使用，你仍可以手动记录。')).toBeVisible()
+  expect(writes).toBe(1)
+})
+
+test('@fake-ai @phase41 更换识别输入后保留文本，删除输入解除草稿来源', async ({ page }) => {
+  await signIn(page, 'ai41_media')
+  await openForm(page, [tomato])
+  await recognize(page)
+  await expect(foods(page).nth(1)).toHaveValue('白米饭')
+  await page.getByRole('button', { name: '移除照片 1' }).click()
+  await expect(foods(page).nth(1)).toHaveValue('白米饭')
+  await expect(page.getByText('模拟估算', { exact: false })).toHaveCount(0)
+  expect((await save(page, '白米饭')).items.map((item: { source: string }) => item.source)).toEqual(['manual', 'manual'])
+})
+
+test('@fake-ai @phase41 连续识别需明确替换，零值和人工修正在手账中可见', async ({ page }) => {
+  await signIn(page, 'ai41_repeat')
+  await openForm(page, [tomato])
+  await recognize(page)
+  await expect(foods(page).nth(1)).toHaveValue('白米饭')
+  await foods(page).first().fill('原来的名称')
+  await page.getByRole('button', { name: '重新识别' }).click()
+  await confirm(page).click()
+  await expect(page.getByText('找到了 2 样美食')).toBeVisible()
+  await expect(foods(page).first()).toHaveValue('原来的名称')
+  await page.getByRole('button', { name: '替换食物明细' }).click()
+  await expect(foods(page).first()).toHaveValue('番茄炒蛋')
+  await page.getByText('营养信息与食物备注').nth(1).click()
+  await page.getByLabel('热量 (kcal)').last().fill('0')
+  await page.getByLabel('分类').last().fill('自定义')
+  expect((await save(page, '白米饭')).items[1].source).toBe('ai_edited')
+  await page.getByText('展开营养数据').click()
+  await expect(page.getByText('含人工修正', { exact: false }).first()).toBeVisible()
+  await page.getByRole('button', { name: /查看记录 .*白米饭/ }).click()
+  const item = page.getByRole('dialog').getByRole('article').last()
+  await expect(item.getByText('已人工修正', { exact: false })).toBeVisible()
+  await item.getByText('营养信息').click()
+  await expect(item.getByText('热量 0 kcal')).toBeVisible()
+  await recoveryShot(page, '03-manually-edited-nutrition')
+})
+
+test('@fake-ai @phase41 @offline Worker 未启动时显示状态，仍可手动保存', async ({ page }) => {
+  await signIn(page, 'ai41_offline')
+  await openForm(page, [tomato])
+  await expect(page.getByText('识别服务暂未连接，可以继续手动记录。')).toBeVisible()
+  await expect(start(page)).toBeDisabled()
+  await recoveryShot(page, '04-worker-offline-manual')
+  await foods(page).first().fill('离线服务下手动记')
+  expect((await save(page, '离线服务下手动记')).items[0].source).toBe('manual')
 })

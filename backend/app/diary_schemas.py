@@ -148,8 +148,15 @@ class NutrientSummary(BaseModel):
     complete: bool
 
 
+class NutrientSources(BaseModel):
+    estimated: int
+    edited: int
+    simulated: int
+
+
 class DailyView(BaseModel):
     date: date
     meals: int
     items: int
     nutrition: dict[str, NutrientSummary]
+    nutrition_sources: dict[str, NutrientSources]

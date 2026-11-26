@@ -1,7 +1,11 @@
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from datetime import timedelta
+from hashlib import sha256
+from io import BytesIO
+from time import monotonic
 from uuid import uuid4
 
 from sqlalchemy import delete, func, select, update
@@ -12,7 +16,8 @@ from app.core.config import Settings
 from app.core.database import utcnow
 from app.models.ai import AiJob, AiJobMedia, AiUsageLog
 from app.models.diary import MediaAsset
-from app.services.ai_jobs import configuration_matches, end_job, retry_later, usage
+from app.services.ai_control import HEARTBEAT_INTERVAL, mark_heartbeat, refund_qwen_call, reserve_qwen_call
+from app.services.ai_jobs import configuration_matches, end_job, matching_photos, retry_later, usage
 from app.services.ai_provider import Analysis, FoodRecognitionProvider, ProviderError, prepare_photo
 from app.services.storage import LocalStorageProvider
 
@@ -25,6 +30,26 @@ class Claim:
     job_id: str
     owner: str
     token: str
+
+
+@dataclass(frozen=True)
+class JobPhoto:
+    id: str
+    sort_order: int
+    key: str
+    size: int
+    digest: str
+
+
+@dataclass(frozen=True)
+class PreparedPhotos:
+    photos: list[JobPhoto]
+    stamps: list[tuple[int, int, int, int]]
+    images: list[bytes]
+
+
+def file_stamp(stat: os.stat_result) -> tuple[int, int, int, int]:
+    return stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino
 
 
 class AiWorker:
@@ -51,9 +76,10 @@ class AiWorker:
             else:
                 end_job(job, "failed", now, "ai_expired" if job.expires_at <= now else "ai_before_send")
         # Includes attempts whose job was cancelled during dispatch.
-        for before, after in (("reserved", "not_sent"), ("dispatching", "unknown")):
+        for before, after, error in (("reserved", "not_sent", "ai_before_send"),
+                                     ("dispatching", "unknown", "ai_result_unknown")):
             db.execute(update(AiUsageLog).where(AiUsageLog.status == before, AiUsageLog.hold_until <= now)
-                       .values(status=after))
+                       .values(status=after, error_code=error))
         db.execute(update(AiJob).where(AiJob.status == "pending", AiJob.expires_at <= now)
                    .values(status="failed", error_code="ai_expired", completed_at=now, updated_at=now))
 
@@ -86,10 +112,11 @@ class AiWorker:
             if not job:
                 db.commit()
                 return None
+            quota = usage(db, self.settings, job.user_id, now)
             if not configuration_matches(self.settings, job):
                 end_job(job, "failed", now, "ai_configuration_changed")
-            elif not usage(db, self.settings, job.user_id, now).available:
-                end_job(job, "failed", now, "ai_quota")
+            elif not quota.available:
+                end_job(job, "failed", now, quota.exhausted_reason or "ai_unavailable")
             else:
                 token = str(uuid4())
                 lease = now + timedelta(seconds=self.settings.ai_timeout_seconds + 30)
@@ -113,20 +140,40 @@ class AiWorker:
             AiJob.claim_token == claim.token, AiJob.lease_until > now,
         ))
 
-    def photos(self, claim: Claim) -> list[bytes]:
-        with self.sessions() as db:
-            keys = db.scalars(select(MediaAsset.original_key).join(
-                AiJobMedia, (AiJobMedia.media_id == MediaAsset.id) & (AiJobMedia.user_id == MediaAsset.user_id),
-            ).where(AiJobMedia.job_id == claim.job_id, AiJobMedia.user_id == claim.owner)
-              .order_by(AiJobMedia.sort_order)).all()
-        if not keys or len(keys) > self.settings.ai_max_images:
+    def photo_records(self, db, job: AiJob) -> list[JobPhoto]:
+        rows = db.execute(select(
+            MediaAsset.id, AiJobMedia.sort_order, MediaAsset.original_key, MediaAsset.size_bytes, MediaAsset.sha256,
+        ).join(AiJobMedia, (AiJobMedia.media_id == MediaAsset.id) & (AiJobMedia.user_id == MediaAsset.user_id))
+          .where(AiJobMedia.job_id == job.id, AiJobMedia.user_id == job.user_id)
+          .order_by(AiJobMedia.sort_order)).all()
+        if (len(rows) > self.settings.ai_max_images or not matching_photos(job, [row.id for row in rows])
+                or [row.sort_order for row in rows] != list(range(len(rows)))):
             raise ProviderError("ai_images_expired", sent=False)
+        return [JobPhoto(*row) for row in rows]
+
+    def photos(self, claim: Claim) -> PreparedPhotos:
+        with self.sessions() as db:
+            job = self.current(db, claim, utcnow())
+            if job is None:
+                raise ProviderError("ai_images_expired", sent=False)
+            records = self.photo_records(db, job)
+        images, stamps = [], []
         try:
-            return [prepare_photo(self.storage.path(key), self.settings.ai_image_edge) for key in keys]
+            for photo in records:
+                with self.storage.path(photo.key).open("rb") as source:
+                    stamp = file_stamp(os.fstat(source.fileno()))
+                    content = source.read(photo.size + 1)
+                    if (len(content) != photo.size or sha256(content).hexdigest() != photo.digest
+                            or stamp != file_stamp(os.fstat(source.fileno()))):
+                        raise ProviderError("ai_image_invalid", sent=False)
+                images.append(prepare_photo(BytesIO(content), self.settings.ai_image_edge))
+                stamps.append(stamp)
         except (OSError, ValueError):
             raise ProviderError("ai_images_expired", sent=False) from None
+        return PreparedPhotos(records, stamps, images)
 
-    def dispatch(self, claim: Claim) -> bool:
+    def dispatch(self, claim: Claim, prepared: PreparedPhotos | None = None) -> bool:
+        prepared = prepared if prepared is not None else self.photos(claim)
         with self.sessions() as db:
             self.begin(db)
             now = utcnow()
@@ -134,9 +181,28 @@ class AiWorker:
             attempt = db.get(AiUsageLog, claim.token)
             if not job or not attempt or attempt.status != "reserved":
                 return False
-            if job.expires_at <= now or not usage(db, self.settings, claim.owner, now, exclude=claim.token).available:
-                attempt.status = "not_sent"
-                end_job(job, "failed", now, "ai_expired" if job.expires_at <= now else "ai_quota")
+            try:
+                stamps = []
+                if self.photo_records(db, job) == prepared.photos:
+                    for photo in prepared.photos:
+                        with self.storage.path(photo.key).open("rb") as source:
+                            stamps.append(file_stamp(os.fstat(source.fileno())))
+                verified = prepared.stamps == stamps
+            except (OSError, ValueError, ProviderError):
+                verified = False
+            quota = usage(db, self.settings, claim.owner, now, exclude=claim.token)
+            code = None
+            if not verified:
+                code = "ai_images_expired"
+            elif job.expires_at <= now:
+                code = "ai_expired"
+            elif not quota.available:
+                code = quota.exhausted_reason or "ai_unavailable"
+            elif job.provider == "qwen" and not reserve_qwen_call(db, self.settings):
+                code = "ai_cumulative_limit"
+            if code:
+                attempt.status, attempt.error_code = "not_sent", code
+                end_job(job, "failed", now, code)
                 db.commit()
                 return False
             attempt.status, attempt.created_at = "dispatching", now
@@ -144,7 +210,7 @@ class AiWorker:
             db.commit()
             return True
 
-    def finish(self, claim: Claim, outcome: Analysis | ProviderError):
+    def finish(self, claim: Claim, outcome: Analysis | ProviderError, elapsed_ms: int | None = None):
         with self.sessions() as db:
             self.begin(db)
             now = utcnow()
@@ -156,6 +222,7 @@ class AiWorker:
             attempt.input_tokens, attempt.output_tokens = counts.input_tokens, counts.output_tokens
             attempt.upstream_request_id = counts.request_id
             attempt.usage_known = counts.input_tokens is not None and counts.output_tokens is not None
+            attempt.elapsed_ms = elapsed_ms
             if isinstance(outcome, Analysis):
                 attempt.status = "succeeded"
                 if job:
@@ -164,6 +231,9 @@ class AiWorker:
                     job.result_json = RecognitionView(**values, foods=foods).model_dump(mode="json")
                     end_job(job, "succeeded", now)
             else:
+                attempt.error_code = outcome.code
+                if not outcome.sent and attempt.status == "dispatching" and attempt.provider == "qwen":
+                    refund_qwen_call(db)
                 attempt.status = (
                     "not_sent" if not outcome.sent else "unknown" if outcome.code == "ai_result_unknown" else "failed"
                 )
@@ -181,13 +251,15 @@ class AiWorker:
         if not claim:
             return False
         dispatched = False
+        sent_at = None
         try:
-            images = await asyncio.to_thread(self.photos, claim)
-            dispatched = await asyncio.to_thread(self.dispatch, claim)
+            prepared = await asyncio.to_thread(self.photos, claim)
+            dispatched = await asyncio.to_thread(self.dispatch, claim, prepared)
             if not dispatched:
                 return True
+            sent_at = monotonic()
             async with asyncio.timeout(self.settings.ai_timeout_seconds + 1):
-                result = await self.provider.analyze(images)
+                result = await self.provider.analyze(prepared.images)
         except ProviderError as error:
             result = error
         except TimeoutError:
@@ -198,10 +270,23 @@ class AiWorker:
         except Exception:
             LOGGER.error("AI worker attempt failed internally")
             result = ProviderError("ai_result_unknown" if dispatched else "ai_internal", sent=dispatched)
-        await asyncio.to_thread(self.finish, claim, result)
+        elapsed_ms = round((monotonic() - sent_at) * 1000) if sent_at is not None else None
+        await asyncio.to_thread(self.finish, claim, result, elapsed_ms)
         return True
 
+    def heartbeat(self):
+        with self.sessions.begin() as db:
+            mark_heartbeat(db, self.settings, utcnow())
+
     async def run(self):
+        async def heartbeat_loop():
+            while True:
+                try:
+                    await asyncio.to_thread(self.heartbeat)
+                except OperationalError:
+                    LOGGER.warning("AI worker heartbeat temporarily unavailable")
+                await asyncio.sleep(HEARTBEAT_INTERVAL)
+
         async def loop(cleanup: bool):
             loop = asyncio.get_running_loop()
             next_cleanup = 0.0
@@ -217,4 +302,4 @@ class AiWorker:
                 if not worked:
                     await asyncio.sleep(1)
 
-        await asyncio.gather(*(loop(index == 0) for index in range(self.settings.ai_max_concurrent_jobs)))
+        await asyncio.gather(heartbeat_loop(), *(loop(index == 0) for index in range(self.settings.ai_max_concurrent_jobs)))

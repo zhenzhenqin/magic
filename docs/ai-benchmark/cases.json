@@ -1,0 +1,13 @@
+[
+  {"case": "croissant", "photos": ["frontend/src/assets/food/croissant.webp"], "status": ["recognized"], "foods": [["可颂", "牛角包", "羊角面包"]], "focus": "单一食物"},
+  {"case": "home-lunch", "photos": ["docs/ai-benchmark/images/homestyle-lunch.jpg"], "status": ["recognized"], "foods": [["白米饭", "米饭"], ["番茄炒蛋", "西红柿炒鸡蛋", "番茄炒鸡蛋"], ["凉拌黄瓜", "黄瓜沙拉"]], "focus": "中式家常多菜"},
+  {"case": "fried-rice", "photos": ["frontend/src/assets/food/fried-rice.webp"], "status": ["recognized"], "foods": [["蛋炒饭", "炒饭"]], "focus": "主食"},
+  {"case": "ramen", "photos": ["frontend/src/assets/food/ramen.webp"], "status": ["recognized"], "foods": [["拉面", "日式拉面", "日式酱油拉面"]], "focus": "面食，食材可在候选备注描述"},
+  {"case": "strawberries", "photos": ["frontend/src/assets/food/strawberries.webp"], "status": ["recognized"], "foods": [["草莓"]], "focus": "水果，同类整份计一次"},
+  {"case": "milk", "photos": ["frontend/src/assets/food/milk.webp"], "status": ["recognized"], "foods": [["牛奶", "鲜牛奶", "鲜奶"]], "focus": "饮品，成分不确定时保留未知"},
+  {"case": "latte", "photos": ["frontend/src/assets/food/coffee.webp"], "status": ["recognized"], "foods": [["拿铁", "拿铁咖啡", "咖啡", "牛奶咖啡"]], "focus": "饮品"},
+  {"case": "packaged-oats", "photos": ["docs/ai-benchmark/images/oat-biscuits.jpg"], "status": ["recognized"], "foods": [["燕麦饼干", "燕麦曲奇", "燕麦饼"]], "focus": "包装食品，图中无营养标签"},
+  {"case": "same-plate", "photos": ["docs/ai-benchmark/images/tomato-eggs-overhead.jpg", "docs/ai-benchmark/images/tomato-eggs-side.jpg"], "status": ["recognized"], "foods": [["番茄炒蛋", "西红柿炒鸡蛋", "番茄炒鸡蛋"]], "focus": "同一道菜合计一次"},
+  {"case": "blurred", "photos": ["docs/ai-benchmark/images/blurred-soup.jpg"], "status": ["unrecognized", "recognized"], "foods": [["面汤", "汤面", "面条", "汤"]], "focus": "模糊图。能辨认时允许宽泛命名，重量和营养应注明未知"},
+  {"case": "not-food", "photos": ["docs/ai-benchmark/images/desk-nonfood.jpg"], "status": ["no_food"], "foods": [], "focus": "非食物"}
+]

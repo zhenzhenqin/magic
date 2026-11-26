@@ -9,7 +9,10 @@ const python = resolve(backend, '.venv', 'Scripts', 'python.exe')
 const web = 'http://127.0.0.1:' + frontendPort
 const api = 'http://127.0.0.1:' + backendPort
 const fakeAi = process.env.FOODDIARY_BROWSER_FAKE_AI === '1'
-const suite = fakeAi ? 'phase-4-ai' : 'phase-2-api'
+const phase41 = process.env.FOODDIARY_BROWSER_PHASE41 === '1'
+const offline = process.env.FOODDIARY_BROWSER_AI_OFFLINE === '1'
+const suite = phase41 ? 'phase-4.1-ai' : fakeAi ? 'phase-4-ai' : 'phase-2-api'
+const flags = [fakeAi && '--fake-ai', phase41 && '--phase-41', offline && '--no-ai-worker'].filter(Boolean).join(' ')
 
 export default defineConfig({
   testDir: './tests',
@@ -29,7 +32,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: '"' + python + '" -m tests.browser_server ' + backendPort + ' ' + frontendPort + (fakeAi ? ' --fake-ai' : ''),
+      command: '"' + python + '" -m tests.browser_server ' + backendPort + ' ' + frontendPort + ' ' + flags,
       cwd: backend,
       url: api + '/api/v1/ready',
       reuseExistingServer: false,

@@ -1,0 +1,12 @@
+﻿case,focus,model,region,image_count,expected_status,expected_foods,job_id,result_status,recognized_foods,missing,wrong,duplicate,json_valid,end_to_end_ms,provider_elapsed_ms,input_tokens,output_tokens,usage_known,nutrition_review,attempt_statuses,failure_retry_reasons,upstream_request_ids,estimate_amount,estimate_currency,price_reference,billed_amount,billed_currency,billing_reference,human_review
+croissant,单一食物,,,1,recognized,可颂,,,,,,,,,,,,,,,,,,,,,,,
+home-lunch,中式家常多菜,,,1,recognized,白米饭、番茄炒蛋、凉拌黄瓜,,,,,,,,,,,,,,,,,,,,,,,
+fried-rice,主食,,,1,recognized,蛋炒饭,,,,,,,,,,,,,,,,,,,,,,,
+ramen,面食，食材可在候选备注描述,,,1,recognized,拉面,,,,,,,,,,,,,,,,,,,,,,,
+strawberries,水果，同类整份计一次,,,1,recognized,草莓,,,,,,,,,,,,,,,,,,,,,,,
+milk,饮品，成分不确定时保留未知,,,1,recognized,牛奶,,,,,,,,,,,,,,,,,,,,,,,
+latte,饮品,,,1,recognized,拿铁,,,,,,,,,,,,,,,,,,,,,,,
+packaged-oats,包装食品，图中无营养标签,,,1,recognized,燕麦饼干,,,,,,,,,,,,,,,,,,,,,,,
+same-plate,同一道菜合计一次,,,2,recognized,番茄炒蛋,,,,,,,,,,,,,,,,,,,,,,,
+blurred,模糊图。能辨认时允许宽泛命名，重量和营养应注明未知,,,1,unrecognized / recognized,面汤,,,,,,,,,,,,,,,,,,,,,,,
+not-food,非食物,,,1,no_food,,,,,,,,,,,,,,,,,,,,,,,,

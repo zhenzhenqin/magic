@@ -33,23 +33,25 @@ def main():
         raise ValueError("Run the browser tests with the D: environment script.")
     root = Path(mkdtemp(prefix="fooddiary-api-browser-", dir=temp))
     simulated = "--fake-ai" in sys.argv[3:]
+    offline = "--no-ai-worker" in sys.argv[3:]
     settings = isolated_settings(
         root / "browser-test.db", app_origins=[f"http://127.0.0.1:{frontend_port}"],
         access_token_seconds=4, refresh_token_seconds=12, register_attempts=100,
         login_attempts=100, refresh_attempts=150,
         ai_enabled=simulated, ai_provider="fake" if simulated else "qwen",
-        ai_user_daily_limit=1, ai_global_daily_limit=100,
+        ai_user_daily_limit=3 if "--phase-41" in sys.argv[3:] else 1, ai_global_daily_limit=100,
     )
     migrate(settings)
     print(f"Test database: {root}", flush=True)
     app = create_app(settings)
-    if simulated:
+    if simulated and not offline:
         original = app.router.lifespan_context
 
         @asynccontextmanager
         async def lifespan(application):
             async with original(application):
                 worker = AiWorker(settings, app.state.session_factory, BrowserVisionProvider())
+                await asyncio.to_thread(worker.heartbeat)
                 task = asyncio.create_task(worker.run())
                 try:
                     yield

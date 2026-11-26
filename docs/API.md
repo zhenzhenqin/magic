@@ -67,3 +67,10 @@
 | `GET /ai/usage` | 当前账号计入的次数、账号上限、综合额度可用性及 UTC 重置时间。全局用量详情留在服务端 |
 
 新餐次和编辑时，新的 AI 明细可提交 `ai_reference: {job_id, candidate_id}`。已有明细提交其 `id`，保留原来源。客户端发送 `source` 会收到 422。结果由服务器确定为 `manual`、`ai` 或 `ai_edited`，并返回 `ai_job_id`、`ai_candidate_id`、`ai_provider`。模拟候选以 `simulated` 和 Provider 标识区分。额度耗尽使用 `ai_quota` 与 429。不可用的识别配置返回 `ai_unavailable` 与 503。
+
+### Phase 4.1
+
+- `GET /ai/jobs/recover` 可按 `request_key` 查创建结果，或按 `retry_key` 与 `job_id` 查重试结果。默认返回本人未完成任务，或与 `form_meal_id` 匹配的近期、未采用结果。无可访问任务时返回 200 和 JSON null。此接口只读。
+- 创建时可提交本人正在编辑的 `form_meal_id`。任务视图返回完整校验后的有序 `media_ids`、`form_meal_id` 和 `worker_online`。识别能力也返回 `worker_online`，独立于配置可用性。
+- 真实百炼累计耗尽时返回 429 和 `ai_cumulative_limit`。用量接口以 `exhausted_reason` 区分每日与累计限制。取消和查询仍按所属账号可用。
+- 新采用 AI 候选时，餐次须保有原识别图片并匹配任务编辑上下文。违反时返回 422 和 `ai_candidate_context`。日报附加 `nutrition_sources`，原 `nutrition` 的未知值、零值和完整性契约保持。

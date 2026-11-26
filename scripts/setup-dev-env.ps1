@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Check', 'Install', 'Dev', 'Typecheck', 'Build', 'Test', 'Screenshots', 'TestApi', 'ScreenshotsApi', 'ScreenshotsDiary', 'TestAi', 'ScreenshotsAi')]
+    [ValidateSet('Check', 'Install', 'Dev', 'Typecheck', 'Build', 'Test', 'Screenshots', 'TestApi', 'ScreenshotsApi', 'ScreenshotsDiary', 'TestAi', 'ScreenshotsAi', 'TestAiRecovery', 'TestAiOffline')]
     [string]$Action = 'Dev',
     [string]$DevEnvRoot = 'D:\DevEnv',
     [int]$Port = 5173,
@@ -28,7 +28,9 @@ $settings = @{
     TMPDIR = Join-Path $cacheRoot 'tmp'
     FOODDIARY_PORT = [string]$Port
     FOODDIARY_BACKEND_PORT = [string]$BackendPort
-    FOODDIARY_BROWSER_FAKE_AI = if ($Action -in 'TestAi', 'ScreenshotsAi') { '1' } else { '0' }
+    FOODDIARY_BROWSER_FAKE_AI = if ($Action -in 'TestAi', 'ScreenshotsAi', 'TestAiRecovery', 'TestAiOffline') { '1' } else { '0' }
+    FOODDIARY_BROWSER_PHASE41 = if ($Action -in 'TestAiRecovery', 'TestAiOffline') { '1' } else { '0' }
+    FOODDIARY_BROWSER_AI_OFFLINE = if ($Action -eq 'TestAiOffline') { '1' } else { '0' }
     VITE_APP_MODE = $buildMode.ToLowerInvariant()
 }
 
@@ -77,8 +79,10 @@ try {
         'TestApi' { & pnpm exec playwright test --config playwright.api.config.ts --grep-invert '@screenshots|@fake-ai' }
         'ScreenshotsApi' { & pnpm exec playwright test --config playwright.api.config.ts auth.api.spec.ts --grep '@screenshots' --reporter=list }
         'ScreenshotsDiary' { & pnpm exec playwright test --config playwright.api.config.ts meal.api.spec.ts --grep '@screenshots' --reporter=list }
-        'TestAi' { & pnpm exec playwright test --config playwright.api.config.ts ai.api.spec.ts --grep '@fake-ai' --grep-invert '@screenshots' }
+        'TestAi' { & pnpm exec playwright test --config playwright.api.config.ts ai.api.spec.ts --grep '@fake-ai' --grep-invert '@screenshots|@phase41' }
         'ScreenshotsAi' { & pnpm exec playwright test --config playwright.api.config.ts ai.api.spec.ts --grep '@screenshots' --reporter=list }
+        'TestAiRecovery' { & pnpm exec playwright test --config playwright.api.config.ts ai.api.spec.ts --grep '@phase41' --grep-invert '@offline' }
+        'TestAiOffline' { & pnpm exec playwright test --config playwright.api.config.ts ai.api.spec.ts --grep '@offline' }
     }
     if ($LASTEXITCODE -ne 0) { throw "FoodDiary action '$Action' exited with code $LASTEXITCODE." }
 }

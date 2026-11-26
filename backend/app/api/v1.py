@@ -10,7 +10,7 @@ from app.core.exceptions import ApiError, ProblemResponse, invalid_session
 from app.core.security import COOKIE_NAME, COOKIE_PATH, access_identity, access_token
 from app.dependencies import Bearer, CurrentUser, Database, browser_request
 from app.models import AuthSession, User, UserSettings
-from app.models.ai import AiJob, AiJobMedia, AiRetryRequest, AiUsageLog
+from app.models.ai import AiCallBudget, AiJob, AiJobMedia, AiRetryRequest, AiUsageLog, AiWorkerHeartbeat
 from app.models.diary import Meal, MealItem, MealMedia, MealRequest, MediaAsset
 from app.schemas import AuthResponse, Login, ProfilePatch, Registration, SettingsPatch, SystemStatus, UserPreferences, UserProfile
 from app.services import auth
@@ -53,7 +53,7 @@ def ready(db: Database) -> SystemStatus:
     try:
         db.execute(text("SELECT 1"))
         for model in (User, UserSettings, AuthSession, Meal, MealItem, MealMedia, MealRequest, MediaAsset,
-                      AiJob, AiJobMedia, AiRetryRequest, AiUsageLog):
+                      AiJob, AiJobMedia, AiRetryRequest, AiUsageLog, AiCallBudget, AiWorkerHeartbeat):
             db.execute(select(model.__table__).limit(0))
     except SQLAlchemyError:
         raise ApiError(503, "database_unavailable", "数据库暂时不可用。") from None

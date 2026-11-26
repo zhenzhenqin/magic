@@ -106,7 +106,18 @@ async function remove(item: Meal) {
         <p>{{ daily.meals }} 笔记录 · {{ daily.items }} 样美食</p>
         <details v-if="visibleNutrients.length && daily.items">
           <summary>展开营养数据</summary>
-          <dl><div v-for="key in visibleNutrients" :key="key"><dt>{{ nutrientFields[key].label }}</dt><dd>{{ daily.nutrition[key].value === null ? '未知' : daily.nutrition[key].value + ' ' + nutrientFields[key].unit }}<small v-if="daily.nutrition[key].value !== null && !daily.nutrition[key].complete"> · 部分记录</small></dd></div></dl>
+          <dl>
+            <div v-for="key in visibleNutrients" :key="key">
+              <dt>{{ nutrientFields[key].label }}</dt>
+              <dd>
+                {{ daily.nutrition[key].value === null ? '未知' : daily.nutrition[key].value + ' ' + nutrientFields[key].unit }}
+                <small v-if="daily.nutrition[key].value !== null && !daily.nutrition[key].complete"> · 部分记录</small>
+                <small v-if="daily.nutrition_sources?.[key]?.estimated"> · 含估算</small>
+                <small v-if="daily.nutrition_sources?.[key]?.edited"> · 含人工修正</small>
+                <small v-if="daily.nutrition_sources?.[key]?.simulated"> · 含模拟</small>
+              </dd>
+            </div>
+          </dl>
         </details>
       </aside>
     </div>
@@ -119,7 +130,7 @@ async function remove(item: Meal) {
         <p v-if="meal.note">{{ meal.note }}</p>
         <article v-for="item in meal.items" :key="item.id" class="detail-item">
           <strong>{{ item.food_name }}</strong>
-          <p v-if="item.source !== 'manual'" class="caption">{{ item.ai_provider === 'fake' ? '模拟估算' : item.source === 'ai_edited' ? 'AI 估算 · 已人工修正' : 'AI 估算' }}</p>
+          <p v-if="item.source !== 'manual'" class="caption">{{ item.ai_provider === 'fake' ? '模拟估算' : 'AI 估算' }}<span v-if="item.source === 'ai_edited'"> · 已人工修正</span></p>
           <p v-if="item.category || item.weight_g !== null" class="caption">{{ [item.category, item.weight_g === null ? '' : item.weight_g + ' g'].filter(Boolean).join(' · ') }}</p>
           <p v-if="item.note" class="caption">{{ item.note }}</p>
           <details v-if="visibleNutrients.length"><summary>营养信息</summary><p v-for="key in visibleNutrients" :key="key" class="caption">{{ nutrientFields[key].label }} {{ item[key] === null ? '未知' : item[key] + ' ' + nutrientFields[key].unit }}</p></details>

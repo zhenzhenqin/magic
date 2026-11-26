@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -7,6 +8,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+QWEN_REGIONS = "cn-beijing|ap-southeast-1|cn-hongkong|us-east-1|ap-northeast-1|eu-central-1"
+QWEN_ENDPOINT = re.compile(
+    r"https://(?:dashscope(?:-intl)?\.aliyuncs\.com|cn-hongkong\.dashscope\.aliyuncs\.com|"
+    rf"(?!trial\.)[a-z0-9](?:[a-z0-9-]{{0,61}}[a-z0-9])?\.(?:{QWEN_REGIONS})\.maas\.aliyuncs\.com)"
+    r"/compatible-mode/v1/?", re.ASCII,
+)
+
+
+def validate_qwen_base_url(value: str) -> str:
+    if value and not QWEN_ENDPOINT.fullmatch(value):
+        raise ValueError("Provide a documented HTTPS Model Studio regional or workspace endpoint")
+    return value.rstrip("/")
 
 
 class Settings(BaseSettings):
@@ -51,6 +64,7 @@ class Settings(BaseSettings):
     ai_max_concurrent_jobs: int = Field(default=1, ge=1, le=4)
     ai_user_daily_limit: int = Field(default=10, ge=1, le=1000)
     ai_global_daily_limit: int = Field(default=30, ge=1, le=10000)
+    ai_qwen_cumulative_limit: int = Field(default=0, ge=0, le=1_000_000)
     ai_max_attempts: int = Field(default=3, ge=1, le=5)
     ai_job_retention_seconds: int = Field(default=604_800, ge=86_400, le=2_592_000)
     ai_usage_retention_seconds: int = Field(default=2_592_000, ge=86_400, le=7_776_000)
@@ -59,13 +73,7 @@ class Settings(BaseSettings):
     @field_validator("ai_base_url")
     @classmethod
     def valid_ai_url(cls, value: str) -> str:
-        if not value:
-            return value
-        parsed = urlsplit(value)
-        if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
-                or parsed.query or parsed.fragment or not parsed.path.rstrip("/").endswith("/compatible-mode/v1")):
-            raise ValueError("Use a trusted HTTPS OpenAI-compatible Model Studio base URL")
-        return value.rstrip("/")
+        return validate_qwen_base_url(value)
 
     @field_validator("app_origins")
     @classmethod

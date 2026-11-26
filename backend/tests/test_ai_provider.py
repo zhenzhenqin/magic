@@ -35,7 +35,7 @@ def response(data):
 @pytest.fixture
 def qwen(tmp_path):
     return isolated_settings(tmp_path / "provider-test.db", ai_enabled=True, ai_model="qwen3-vl-flash",
-                             ai_base_url="https://provider.example.test/compatible-mode/v1", ai_api_key=token_urlsafe(36))
+                             ai_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", ai_api_key=token_urlsafe(36))
 
 
 def run(qwen, handler, images=None):
@@ -100,7 +100,7 @@ def test_conflicting_estimates_become_unknown(qwen):
 ])
 def test_http_failures_do_not_follow_redirects_or_expose_body(qwen, status, code, retryable, caplog):
     def handle(request):
-        assert request.url.host == "provider.example.test"
+        assert request.url.host == "dashscope.aliyuncs.com"
         return httpx.Response(status, headers={"Retry-After": "17", "Location": "https://other.example.test/"},
                               text=qwen.ai_api_key.get_secret_value())
     with pytest.raises(ProviderError, match=code) as failure:
@@ -128,6 +128,13 @@ def test_missing_key_never_sends(qwen):
     qwen.ai_api_key = None
     with pytest.raises(ProviderError, match="ai_unavailable"):
         run(qwen, lambda _: pytest.fail("Unexpected outbound request"))
+
+
+def test_mutated_settings_are_rechecked_before_constructing_a_request(qwen):
+    qwen.ai_base_url = "https://unexpected.example.test/compatible-mode/v1"
+    with pytest.raises(ProviderError, match="ai_configuration_changed") as failure:
+        run(qwen, lambda _: pytest.fail("Untrusted destination reached the transport"))
+    assert not failure.value.sent
 
 
 def test_fake_is_rejected_in_production():

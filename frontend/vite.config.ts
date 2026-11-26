@@ -8,6 +8,7 @@ export default defineConfig(({ command, mode }) => {
   if (runtime !== 'api' && runtime !== 'demo') throw new Error('VITE_APP_MODE must be api or demo.')
   return {
     plugins: [vue(), tailwindcss()],
+    cacheDir: 'node_modules/.vite/' + runtime + '-' + (Number(process.env.FOODDIARY_PORT) || 5173),
     resolve: {
       alias: { '@fooddiary/runtime': fileURLToPath(new URL('./src/modes/' + runtime + '.ts', import.meta.url)) },
     },

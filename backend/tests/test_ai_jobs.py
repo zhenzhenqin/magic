@@ -178,7 +178,7 @@ def test_recovery_of_unsent_lease_and_stale_worker_cannot_overwrite(env):
     new = service.claim()
     assert new.token != old.token and service.dispatch(new)
     service.finish(old, ProviderError("ai_result_unknown"))
-    outcome = asyncio.run(service.provider.analyze(service.photos(new)))
+    outcome = asyncio.run(service.provider.analyze(service.photos(new).images))
     service.finish(new, outcome)
     job = client.get(JOBS + "/" + identifier, headers=headers).json()
     assert job["status"] == "succeeded" and job["attempt_count"] == 2
@@ -319,7 +319,7 @@ def test_ai_only_writes_after_confirmation_and_sources_and_ids_survive_edit(env)
 
 def test_forged_candidate_and_item_references_are_rejected(env):
     app, client = env
-    auth, _, identifier = create_for(env)
+    auth, image, identifier = create_for(env)
     assert asyncio.run(worker(app).process_once())
     job = client.get(JOBS + "/" + identifier, headers=auth).json()
     a = save_meal(client, auth, sample(items=[{"food_name": "汤"}])).json()
@@ -329,7 +329,8 @@ def test_forged_candidate_and_item_references_are_rejected(env):
     spoof = candidate(job)
     spoof["ai_reference"]["candidate_id"] = str(uuid4())
     assert save_meal(client, auth, sample(items=[spoof])).status_code == 404
-    assert save_meal(client, auth, sample(items=[candidate(job), candidate(job)])).status_code == 422
+    duplicate = save_meal(client, auth, sample(media_ids=[image], items=[candidate(job), candidate(job)]))
+    assert duplicate.status_code == 422 and duplicate.json()["error"]["code"] == "ai_candidate_duplicate"
     assert save_meal(client, auth, sample(items=[{"food_name": "水", "source": "ai"}])).status_code == 422
     same_owner = save_meal(client, auth).json()
     path = API + "/meals/" + a["id"]

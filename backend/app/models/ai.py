@@ -32,6 +32,8 @@ class AiJob(Base):
     result_json: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
     error_code: Mapped[str | None] = mapped_column(String(40))
     adopted_meal_id: Mapped[str | None] = mapped_column(String(36))
+    form_meal_id: Mapped[str | None] = mapped_column(String(36))
+    media_snapshot: Mapped[list[str] | None] = mapped_column(JSON(none_as_null=True))
     available_at: Mapped[datetime] = mapped_column(UTCDateTime())
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
     lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
@@ -62,13 +64,16 @@ class AiUsageLog(Base):
     __table_args__ = (Index("ix_ai_usage_provider_time", "provider", "created_at"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL",
+                                                        name="fk_ai_usage_logs_user"))
     job_id: Mapped[str | None] = mapped_column(ForeignKey("ai_jobs.id", ondelete="SET NULL"), index=True)
     provider: Mapped[str] = mapped_column(String(16))
     model: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(20))
+    error_code: Mapped[str | None] = mapped_column(String(40))
     input_tokens: Mapped[int | None]
     output_tokens: Mapped[int | None]
+    elapsed_ms: Mapped[int | None]
     upstream_request_id: Mapped[str | None] = mapped_column(String(128))
     usage_known: Mapped[bool] = mapped_column(default=False)
     hold_until: Mapped[datetime] = mapped_column(UTCDateTime())
@@ -86,3 +91,18 @@ class AiRetryRequest(Base):
     job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
     fingerprint: Mapped[str] = mapped_column(String(64))
+
+
+class AiCallBudget(Base):
+    __tablename__ = "ai_call_budgets"
+    __table_args__ = (CheckConstraint("spent >= 0", name="ck_ai_call_budget_nonnegative"),)
+
+    provider: Mapped[str] = mapped_column(String(16), primary_key=True)
+    spent: Mapped[int]
+
+
+class AiWorkerHeartbeat(Base):
+    __tablename__ = "ai_worker_heartbeats"
+
+    configuration: Mapped[str] = mapped_column(String(64), primary_key=True)
+    checked_at: Mapped[datetime] = mapped_column(UTCDateTime())

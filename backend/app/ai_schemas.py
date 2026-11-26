@@ -85,6 +85,7 @@ class RecognitionView(Recognition):
 class JobCreate(Input):
     media_ids: Annotated[list[UUID], Field(min_length=1, max_length=5)]
     consent_version: Annotated[str, StringConstraints(min_length=1, max_length=24)]
+    form_meal_id: UUID | None = None
 
     @field_validator("media_ids")
     @classmethod
@@ -109,6 +110,9 @@ class JobView(Input):
     attempt_count: int
     created_at: datetime
     expires_at: datetime
+    media_ids: list[UUID]
+    form_meal_id: UUID | None
+    worker_online: bool
 
 
 class AiCapabilities(Input):
@@ -117,6 +121,7 @@ class AiCapabilities(Input):
     max_images: int
     consent_version: str
     privacy_url: str | None
+    worker_online: bool
 
 
 class UsageView(Input):
@@ -124,3 +129,4 @@ class UsageView(Input):
     limit: int
     available: bool
     resets_at: datetime
+    exhausted_reason: str | None
