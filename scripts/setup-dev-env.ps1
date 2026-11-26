@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Check', 'Install', 'Dev', 'Typecheck', 'Build', 'Test', 'Screenshots', 'TestApi', 'ScreenshotsApi')]
+    [ValidateSet('Check', 'Install', 'Dev', 'Typecheck', 'Build', 'Test', 'Screenshots', 'TestApi', 'ScreenshotsApi', 'ScreenshotsDiary')]
     [string]$Action = 'Dev',
     [string]$DevEnvRoot = 'D:\DevEnv',
     [int]$Port = 5173,
@@ -74,7 +74,8 @@ try {
         'Test' { & pnpm test }
         'Screenshots' { & pnpm screenshots }
         'TestApi' { & pnpm exec playwright test --config playwright.api.config.ts --grep-invert '@screenshots' }
-        'ScreenshotsApi' { & pnpm exec playwright test --config playwright.api.config.ts --grep '@screenshots' --reporter=list }
+        'ScreenshotsApi' { & pnpm exec playwright test --config playwright.api.config.ts auth.api.spec.ts --grep '@screenshots' --reporter=list }
+        'ScreenshotsDiary' { & pnpm exec playwright test --config playwright.api.config.ts meal.api.spec.ts --grep '@screenshots' --reporter=list }
     }
     if ($LASTEXITCODE -ne 0) { throw "FoodDiary action '$Action' exited with code $LASTEXITCODE." }
 }

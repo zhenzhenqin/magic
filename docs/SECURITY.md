@@ -1,4 +1,4 @@
-# FoodDiary 阶段 2 认证安全
+# FoodDiary 认证与媒体安全
 
 ## 密码与限流
 
@@ -22,3 +22,11 @@
 - Demo 和 API 使用构建或启动时确定的路由入口，真实身份和设置不写入 Demo 存储。原生 Android 安全存储、生产 HTTPS 和云端实际负载未在阶段 2 验证。
 
 实现参考。[FastAPI 安全指南](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/) · [PyJWT API](https://pyjwt.readthedocs.io/en/stable/api.html) · [argon2-cffi](https://argon2-cffi.readthedocs.io/en/stable/api.html)
+
+## 阶段 3 多标签页与图片边界
+
+浏览器 Cookie 属于最近登录的会话。旧页面仍持有原账号 Access Token 时，只能访问原账号，不能以原账号令牌刷新新账号的 Cookie。刷新和退出可以用已签名但过期的 Access Token 校验会话绑定。数据接口仍严格拒绝已过期令牌。旧标签页退出时只撤销自身会话，另一个账号的 Cookie 不被清除。
+
+前端借助 BroadcastChannel 通知标签页身份变化并通过 Web Locks 串行处理浏览器会话操作。账号变化会取消旧账号在途请求、释放页面和图片引用，并要求重新确认身份。单标签页仅记录一个无身份值的暂停标记，重新加载也不会自动采用另一账号的 Cookie。新账号不会接收旧账号的请求结果。
+
+用餐记录、原图、缩略图和图片关联全部执行服务端所有者校验。跨账号与随机资源使用同样的 404，数据库复合外键阻止跨账号图片关联。图片不会通过静态目录公开，URL 不携带令牌。[存储边界](STORAGE.md)

@@ -1,9 +1,10 @@
 param(
-    [ValidateSet('Install','Migrate','CheckSchema','Dev','Test','Benchmark')]
+    [ValidateSet('Install','Migrate','CheckSchema','Dev','Test','Benchmark','MediaCleanup','BenchmarkImages')]
     [string]$Action = 'Install',
     [string]$DevEnvRoot = 'D:\DevEnv',
     [int]$Port = 8000,
-    [int]$FrontendPort = 5173
+    [int]$FrontendPort = 5173,
+    [switch]$ApplyCleanup
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,6 +34,8 @@ try {
             & python -m venv .venv
             if ($LASTEXITCODE -ne 0) { throw 'Could not create the Python virtual environment.' }
         }
+        & $python -c 'import sys, sysconfig; from pathlib import Path; root = Path(sys.prefix).resolve(); assert sys.prefix != sys.base_prefix and root == (Path.cwd() / ".venv").resolve() and Path(sysconfig.get_path("purelib")).resolve().is_relative_to(root)'
+        if ($LASTEXITCODE -ne 0) { throw 'Pip installation must target the project virtual environment.' }
         & $python -m pip install --only-binary=:all: -r requirements.txt
         if ($LASTEXITCODE -ne 0) { throw 'Python dependencies could not be installed.' }
         & $python -m pip check
@@ -54,11 +57,16 @@ try {
             & $python -m pytest -p no:cacheprovider --basetemp $folder
         }
         'Benchmark' { & $python -m tests.benchmark_passwords }
+        'BenchmarkImages' { & $python -m tests.benchmark_images }
         default {
             Initialize-LocalDatabase -Root $root -FrontendPort $FrontendPort
             switch ($Action) {
                 'Migrate' { & $python -m alembic upgrade head }
                 'CheckSchema' { & $python -m alembic current; if ($LASTEXITCODE -eq 0) { & $python -m alembic check } }
+                'MediaCleanup' {
+                    if ($ApplyCleanup) { & $python -m app.media_cleanup --apply }
+                    else { & $python -m app.media_cleanup }
+                }
                 'Dev' {
                     Assert-FreeLocalPort -Port $Port
                     & $python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port $Port --no-proxy-headers

@@ -42,12 +42,14 @@ def login(db: Session, data: Login, settings: Settings, passwords: Passwords):
     return user, session, token
 
 
-def refresh(db: Session, token: str, settings: Settings):
+def refresh(db: Session, token: str, settings: Settings, identity: tuple[str, str] | None = None):
     now = utcnow()
     incoming = token_hash(token)
     replacement = new_refresh_token()
     new_hash = token_hash(replacement)
     eligible = (AuthSession.revoked_at.is_(None), AuthSession.expires_at > now)
+    if identity:
+        eligible += (AuthSession.user_id == identity[0], AuthSession.id == identity[1])
     # Update first. This avoids a read-to-write lock upgrade on SQLite and
     # gives concurrent requests exactly one winner via the current digest.
     rotated = db.execute(
@@ -81,12 +83,17 @@ def refresh(db: Session, token: str, settings: Settings):
 
 def revoke(db: Session, token: str | None, identity: tuple[str, str] | None):
     if identity is None and token is None:
-        return
+        return True
+    matches_cookie = True
     query = update(AuthSession).where(AuthSession.revoked_at.is_(None))
     if identity:
         user_id, session_id = identity
+        if token:
+            cookie_id = db.scalar(select(AuthSession.id).where(AuthSession.refresh_token_hash == token_hash(token)))
+            matches_cookie = cookie_id is None or cookie_id == session_id
         query = query.where(AuthSession.user_id == user_id, AuthSession.id == session_id)
     else:
         query = query.where(AuthSession.refresh_token_hash == token_hash(token))
     db.execute(query.values(revoked_at=utcnow()))
     db.commit()
+    return matches_cookie

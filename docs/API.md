@@ -1,4 +1,4 @@
-# FoodDiary 阶段 2 API
+# FoodDiary API
 
 本地 API 默认绑定 `http://127.0.0.1:8000`。Swagger 位于 `/docs`，OpenAPI 位于 `/openapi.json`。业务接口统一使用 `/api/v1`。联合启动时，前端通过同源 Vite Proxy 转发 `/api`。
 
@@ -32,3 +32,22 @@
 ```
 
 联调时使用当前前端地址作为可信 Origin。Swagger 可查看模型。直接从后端端口点击授权相关请求时，浏览器 Origin 仍须满足白名单；通过联合前端正常操作可验证完整 Cookie 流程。
+
+## 阶段 3 私人手账
+
+以下路由仍使用 `/api/v1`，所有请求都需要有效的 Bearer 会话。其他账号的资源与不存在的资源返回同样的 404。
+
+| 方法 | 路径 | 请求与结果 |
+| --- | --- | --- |
+| POST | `/media/upload` | multipart 单文件 `file`。201 返回图片 ID、状态、尺寸与大小 |
+| GET | `/media/{id}`、`/media/{id}/thumbnail` | 私有规范化原图与缩略图，200 WebP，禁止缓存 |
+| DELETE | `/media/{id}` | 未关联图返回 204，仍被关联返回 409 |
+| POST | `/meals` | 要求 `Idempotency-Key`，8–128 个小写字母、数字、下划线或连字符。新建 201，同内容重试 200，不同内容或已删除请求 409 |
+| GET | `/meals` | `date` 或 `start/end`，可用 `meal_type/page/limit`。默认 30 条，单页最多 100。倒序按本地日期、UTC 用餐时间、UUID |
+| GET | `/meals/{id}` | 完整明细、照片和编辑版本 |
+| PATCH | `/meals/{id}` | 提交全部可编辑表单及 `version`，过期版本 409 |
+| DELETE | `/meals/{id}` | 可带 `version` 保护旧操作，成功返回 204 |
+| GET | `/calendar?month=YYYY-MM` | 记录日期、餐次数、代表图片 ID |
+| GET | `/statistics/daily?date=YYYY-MM-DD` | 餐数、食物数和按已知数值汇总的营养 |
+
+提交包含 `meal_type`、`local_date`、`local_time`、`timezone`、备注、1–30 个 `items` 和最多 5 个已有同账号图片 ID。食物明细支持名称、分类、重量、热量、蛋白质、碳水、脂肪和备注。营养与重量允许 null，拒绝负数、非有限值和超出精度范围的值。数据库写锁超时返回统一 503 和 `Retry-After`，创建可用原幂等键重试。

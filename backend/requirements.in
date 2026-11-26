@@ -9,3 +9,5 @@ PyJWT>=2.13,<3
 tzdata
 pytest>=8.4,<10
 httpx>=0.28,<1
+Pillow>=12.3,<14
+python-multipart>=0.0.31,<1

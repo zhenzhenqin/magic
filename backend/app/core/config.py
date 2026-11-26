@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     argon_memory_kib: int = Field(default=32768, ge=19456, le=131072)
     argon_time_cost: int = Field(default=2, ge=2, le=5)
     argon_slots: int = Field(default=2, ge=1, le=4)
+    media_dir: Path = Path("data/media")
+    image_upload_bytes: int = Field(default=10_485_760, ge=1024, le=20_971_520)
+    image_max_pixels: int = Field(default=20_000_000, ge=100, le=25_000_000)
+    image_max_edge: int = Field(default=1600, ge=64, le=2048)
+    image_thumbnail_edge: int = Field(default=400, ge=32, le=800)
+    image_process_slots: int = Field(default=1, ge=1, le=2)
+    media_upload_attempts: int = Field(default=30, ge=1, le=500)
+    media_user_bytes: int = Field(default=209_715_200, ge=1)
+    media_user_files: int = Field(default=1000, ge=1)
+    media_orphan_seconds: int = Field(default=86_400, ge=60)
 
     @field_validator("app_origins")
     @classmethod
@@ -64,3 +74,7 @@ class Settings(BaseSettings):
             if not file.is_absolute():
                 url = url.set(database=(BACKEND_DIR / file).resolve().as_posix())
         return url
+
+    @property
+    def media_root(self) -> Path:
+        return (BACKEND_DIR / self.media_dir).resolve()

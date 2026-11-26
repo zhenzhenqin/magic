@@ -176,7 +176,7 @@ test('@screenshots Swagger 和实际测试报告', async ({ page }) => {
   await expect(page.locator('.swagger-ui .info .title')).toContainText('FoodDiary API', { timeout: 20_000 })
   await capture(page, '05-swagger')
   await page.goto(report.href)
-  await expect(page.getByRole('link', { name: 'Passed7' })).toBeVisible({ timeout: 12_000 })
+  await expect(page.getByRole('link', { name: /^Passed\d+$/ })).toBeVisible({ timeout: 12_000 })
   await expect(page.getByRole('link', { name: 'Failed0' })).toBeVisible()
   await capture(page, '06-test-results')
 })

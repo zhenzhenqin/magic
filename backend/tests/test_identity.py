@@ -68,9 +68,9 @@ def test_readiness_rejects_unmigrated_database(settings):
 
 def test_empty_database_migrates_and_configures_sqlite(app):
     engine = app.state.engine
-    assert set(inspect(engine).get_table_names()) == {"alembic_version", "users", "user_settings", "auth_sessions"}
+    assert {"alembic_version", "users", "user_settings", "auth_sessions"}.issubset(inspect(engine).get_table_names())
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0001_identity"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0002_meal_diary"
         assert connection.scalar(text("PRAGMA foreign_keys")) == 1
         assert connection.scalar(text("PRAGMA journal_mode")) == "wal"
         assert connection.scalar(text("PRAGMA busy_timeout")) == 5000

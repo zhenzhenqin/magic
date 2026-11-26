@@ -38,14 +38,14 @@ def access_token(settings: Settings, user_id: str, session_id: str) -> str:
     )
 
 
-def access_identity(settings: Settings, token: str) -> tuple[str, str]:
+def access_identity(settings: Settings, token: str, *, binding_only: bool = False) -> tuple[str, str]:
     if len(token) > 2048:
         raise invalid_session()
     try:
         data = jwt.decode(
             token, settings.jwt_secret.get_secret_value(), algorithms=[ALGORITHM],
             issuer=ISSUER, audience=AUDIENCE,
-            options={"require": ["iss", "aud", "sub", "sid", "iat", "exp"]},
+            options={"require": ["iss", "aud", "sub", "sid", "iat", "exp"], "verify_exp": not binding_only},
         )
         return str(UUID(data["sub"])), str(UUID(data["sid"]))
     except (jwt.InvalidTokenError, ValueError, TypeError, AttributeError):

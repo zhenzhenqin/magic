@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import type { DateKey } from '../types/domain'
 import { fromKey, shiftDay, todayKey, weekFor, weekdays } from '../utils/dates'
 
-const props = defineProps<{ selected: DateKey; recorded?: DateKey[] }>()
+const props = defineProps<{ selected: DateKey; recorded?: DateKey[]; today?: DateKey }>()
 const emit = defineEmits<{ select: [date: DateKey] }>()
 const week = computed(() => weekFor(props.selected))
 </script>
@@ -14,7 +14,7 @@ const week = computed(() => weekFor(props.selected))
     <button class="icon-button button-quiet change-week" aria-label="上一周" @click="emit('select', shiftDay(selected, -7))"><ChevronLeft /></button>
     <div class="week-grid">
       <button v-for="(date, index) in week" :key="date" class="day-pick" :class="{ selected: date === selected }"
-        :aria-label="date + (date === todayKey() ? ' 今天' : '')" :aria-pressed="date === selected" @click="emit('select', date)">
+        :aria-label="date + (date === (today ?? todayKey()) ? ' 今天' : '')" :aria-pressed="date === selected" @click="emit('select', date)">
         <span>{{ weekdays[index] }}</span>
         <strong>{{ fromKey(date).getDate() }}</strong>
         <i v-if="recorded?.includes(date)" class="dot" aria-label="有记录"></i>

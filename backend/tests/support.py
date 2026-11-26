@@ -11,6 +11,7 @@ from app.core.database import build_engine
 def isolated_settings(path: Path, **overrides):
     path = path.resolve()
     if not path.is_relative_to(Path(BACKEND_DIR).parent) and path.name.endswith("-test.db"):
+        overrides.setdefault("media_dir", path.parent / "media")
         return Settings(
             _env_file=None, app_env="test", database_url="sqlite:///" + path.as_posix(),
             jwt_secret=token_urlsafe(48), **overrides,
@@ -18,12 +19,12 @@ def isolated_settings(path: Path, **overrides):
     raise ValueError("Tests require a test-named database outside the project checkout.")
 
 
-def migrate(settings: Settings):
+def migrate(settings: Settings, revision: str = "head"):
     engine = build_engine(settings.db_url)
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     try:
         with engine.begin() as connection:
             config.attributes["connection"] = connection
-            command.upgrade(config, "head")
+            command.upgrade(config, revision)
     finally:
         engine.dispose()

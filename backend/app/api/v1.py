@@ -10,6 +10,7 @@ from app.core.exceptions import ApiError, ProblemResponse, invalid_session
 from app.core.security import COOKIE_NAME, COOKIE_PATH, access_identity, access_token
 from app.dependencies import Bearer, CurrentUser, Database, browser_request
 from app.models import AuthSession, User, UserSettings
+from app.models.diary import Meal, MealItem, MealMedia, MealRequest, MediaAsset
 from app.schemas import AuthResponse, Login, ProfilePatch, Registration, SettingsPatch, SystemStatus, UserPreferences, UserProfile
 from app.services import auth
 
@@ -50,7 +51,7 @@ def ready(db: Database) -> SystemStatus:
     """检查数据库连接与本阶段业务表。"""
     try:
         db.execute(text("SELECT 1"))
-        for model in (User, UserSettings, AuthSession):
+        for model in (User, UserSettings, AuthSession, Meal, MealItem, MealMedia, MealRequest, MediaAsset):
             db.execute(select(model.__table__).limit(0))
     except SQLAlchemyError:
         raise ApiError(503, "database_unavailable", "数据库暂时不可用。") from None
@@ -74,28 +75,25 @@ def login(data: Login, request: Request, response: Response, db: Database) -> Au
 
 
 @authentication.post("/refresh", responses={401: {"model": ProblemResponse}, 409: {"model": ProblemResponse}})
-def refresh(request: Request, response: Response, db: Database, cookie: RefreshCookie = None) -> AuthResponse:
+def refresh(request: Request, response: Response, db: Database, credentials: Bearer, cookie: RefreshCookie = None) -> AuthResponse:
     """轮换刷新 Cookie 并返回新的短期访问令牌。"""
     settings = request.app.state.settings
     limit(request, "refresh", settings.refresh_attempts)
     if not cookie:
         raise invalid_session()
-    return set_session(response, request, *auth.refresh(db, cookie, settings))
+    identity = access_identity(settings, credentials.credentials, binding_only=True) if credentials else None
+    return set_session(response, request, *auth.refresh(db, cookie, settings, identity))
 
 
 @authentication.post("/logout", status_code=204)
 def logout(request: Request, db: Database, credentials: Bearer, cookie: RefreshCookie = None) -> Response:
     """撤销当前会话并清除刷新 Cookie。"""
     settings = request.app.state.settings
-    identity = None
-    if credentials:
-        try:
-            identity = access_identity(settings, credentials.credentials)
-        except ApiError:
-            pass
-    auth.revoke(db, cookie, identity)
+    identity = access_identity(settings, credentials.credentials, binding_only=True) if credentials else None
+    clear_cookie = auth.revoke(db, cookie, identity)
     response = Response(status_code=204)
-    response.delete_cookie(COOKIE_NAME, path=COOKIE_PATH, secure=settings.secure_cookie, httponly=True, samesite="strict")
+    if clear_cookie:
+        response.delete_cookie(COOKIE_NAME, path=COOKIE_PATH, secure=settings.secure_cookie, httponly=True, samesite="strict")
     return response
 
 
