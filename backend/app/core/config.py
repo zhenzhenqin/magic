@@ -39,6 +39,33 @@ class Settings(BaseSettings):
     media_user_bytes: int = Field(default=209_715_200, ge=1)
     media_user_files: int = Field(default=1000, ge=1)
     media_orphan_seconds: int = Field(default=86_400, ge=60)
+    ai_enabled: bool = False
+    ai_provider: Literal["qwen", "fake"] = "qwen"
+    ai_base_url: str = ""
+    ai_api_key: SecretStr | None = None
+    ai_model: str = Field(default="", max_length=100)
+    ai_timeout_seconds: int = Field(default=40, ge=1, le=120)
+    ai_max_output_tokens: int = Field(default=3000, ge=256, le=8192)
+    ai_max_images: int = Field(default=3, ge=1, le=5)
+    ai_image_edge: int = Field(default=1024, ge=256, le=1280)
+    ai_max_concurrent_jobs: int = Field(default=1, ge=1, le=4)
+    ai_user_daily_limit: int = Field(default=10, ge=1, le=1000)
+    ai_global_daily_limit: int = Field(default=30, ge=1, le=10000)
+    ai_max_attempts: int = Field(default=3, ge=1, le=5)
+    ai_job_retention_seconds: int = Field(default=604_800, ge=86_400, le=2_592_000)
+    ai_usage_retention_seconds: int = Field(default=2_592_000, ge=86_400, le=7_776_000)
+    ai_job_ttl_seconds: int = Field(default=900, ge=180, le=3600)
+
+    @field_validator("ai_base_url")
+    @classmethod
+    def valid_ai_url(cls, value: str) -> str:
+        if not value:
+            return value
+        parsed = urlsplit(value)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                or parsed.query or parsed.fragment or not parsed.path.rstrip("/").endswith("/compatible-mode/v1")):
+            raise ValueError("Use a trusted HTTPS OpenAI-compatible Model Studio base URL")
+        return value.rstrip("/")
 
     @field_validator("app_origins")
     @classmethod
@@ -60,7 +87,21 @@ class Settings(BaseSettings):
             raise ValueError("JWT_SECRET must be a high-entropy value of at least 32 bytes")
         if self.app_env == "production" and any(not origin.startswith("https://") for origin in self.app_origins):
             raise ValueError("Production browser origins require HTTPS")
+        if self.app_env == "production" and self.ai_provider == "fake":
+            raise ValueError("Production prohibits the fake AI provider")
+        if self.ai_enabled and (self.db_url.get_backend_name() != "sqlite" or self.db_url.database in (None, "", ":memory:")):
+            raise ValueError("AI jobs require a shared SQLite file")
         return self
+
+    @property
+    def ai_available(self) -> bool:
+        return self.ai_enabled and (self.ai_provider == "fake" or bool(
+            self.ai_base_url and self.ai_model and self.ai_api_key and self.ai_api_key.get_secret_value().strip()
+        ))
+
+    @property
+    def ai_model_name(self) -> str:
+        return self.ai_model or ("local-fixture" if self.ai_provider == "fake" else "")
 
     @property
     def secure_cookie(self) -> bool:

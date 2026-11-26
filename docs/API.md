@@ -51,3 +51,19 @@
 | GET | `/statistics/daily?date=YYYY-MM-DD` | 餐数、食物数和按已知数值汇总的营养 |
 
 提交包含 `meal_type`、`local_date`、`local_time`、`timezone`、备注、1–30 个 `items` 和最多 5 个已有同账号图片 ID。食物明细支持名称、分类、重量、热量、蛋白质、碳水、脂肪和备注。营养与重量允许 null，拒绝负数、非有限值和超出精度范围的值。数据库写锁超时返回统一 503 和 `Retry-After`，创建可用原幂等键重试。
+
+
+## 阶段 4 食物识别
+
+路径继续使用 `/api/v1`，所有识别接口需要有效 Bearer 会话并返回 `Cache-Control: no-store`。跨账号访问的任务和媒体验证使用与不存在相同的 404。
+
+| 方法和路径 | 请求及响应 |
+| --- | --- |
+| `GET /ai/capabilities` | `available`、`simulated`、`max_images`、`consent_version`、`privacy_url` |
+| `POST /ai/jobs` | 确认告知后提交 `media_ids` 与当前 `consent_version`，附 `Idempotency-Key`。成功 202，包含任务 UUID、状态及过期时间。相同键和相同照片顺序重放，内容不一致为 409 |
+| `GET /ai/jobs/{id}` | 所属任务状态、可重试标记、处理结果或安全错误码。成功结果含稳定候选 UUID。任务结果保留期过后返回 404 |
+| `POST /ai/jobs/{id}/cancel` | 取消等待或运行中的任务。已发送的上游调用可能仍会处理。返回当前任务状态 |
+| `POST /ai/jobs/{id}/retry` | 附不同操作各自的 `Idempotency-Key`、当前 `consent_version`。上次发送状态未知时须显式传 `accept_unknown_charge=true`。成功 202 |
+| `GET /ai/usage` | 当前账号计入的次数、账号上限、综合额度可用性及 UTC 重置时间。全局用量详情留在服务端 |
+
+新餐次和编辑时，新的 AI 明细可提交 `ai_reference: {job_id, candidate_id}`。已有明细提交其 `id`，保留原来源。客户端发送 `source` 会收到 422。结果由服务器确定为 `manual`、`ai` 或 `ai_edited`，并返回 `ai_job_id`、`ai_candidate_id`、`ai_provider`。模拟候选以 `simulated` 和 Provider 标识区分。额度耗尽使用 `ai_quota` 与 429。不可用的识别配置返回 `ai_unavailable` 与 503。

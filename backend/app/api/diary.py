@@ -2,7 +2,7 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Query, Response
+from fastapi import APIRouter, Header, Query, Request, Response
 
 from app.core.exceptions import ApiError, ProblemResponse
 from app.dependencies import CurrentUser, Database
@@ -14,8 +14,8 @@ IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", pattern=r"^[a-z0
 
 
 @router.post("/meals", status_code=201, responses={200: {"model": MealView}, 409: {"model": ProblemResponse}})
-def create(data: MealInput, response: Response, user: CurrentUser, db: Database, key: IdempotencyKey) -> MealView:
-    saved, replay = diary.create(db, user.id, key, data)
+def create(request: Request, data: MealInput, response: Response, user: CurrentUser, db: Database, key: IdempotencyKey) -> MealView:
+    saved, replay = diary.create(db, request.app.state.settings, user.id, key, data)
     if replay:
         response.status_code = 200
     return saved
@@ -38,8 +38,8 @@ def detail(user: CurrentUser, db: Database, meal_id: UUID) -> MealView:
 
 
 @router.patch("/meals/{meal_id}", responses={409: {"model": ProblemResponse}})
-def edit(user: CurrentUser, db: Database, meal_id: UUID, data: MealEdit) -> MealView:
-    return diary.edit(db, user.id, str(meal_id), data)
+def edit(request: Request, user: CurrentUser, db: Database, meal_id: UUID, data: MealEdit) -> MealView:
+    return diary.edit(db, request.app.state.settings, user.id, str(meal_id), data)
 
 
 @router.delete("/meals/{meal_id}", status_code=204, responses={409: {"model": ProblemResponse}})

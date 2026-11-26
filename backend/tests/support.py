@@ -12,6 +12,8 @@ def isolated_settings(path: Path, **overrides):
     path = path.resolve()
     if not path.is_relative_to(Path(BACKEND_DIR).parent) and path.name.endswith("-test.db"):
         overrides.setdefault("media_dir", path.parent / "media")
+        overrides.setdefault("ai_enabled", False)
+        overrides.setdefault("ai_provider", "qwen")
         return Settings(
             _env_file=None, app_env="test", database_url="sqlite:///" + path.as_posix(),
             jwt_secret=token_urlsafe(48), **overrides,

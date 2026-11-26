@@ -8,14 +8,16 @@ const backend = fileURLToPath(new URL('../backend/', import.meta.url))
 const python = resolve(backend, '.venv', 'Scripts', 'python.exe')
 const web = 'http://127.0.0.1:' + frontendPort
 const api = 'http://127.0.0.1:' + backendPort
+const fakeAi = process.env.FOODDIARY_BROWSER_FAKE_AI === '1'
+const suite = fakeAi ? 'phase-4-ai' : 'phase-2-api'
 
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.api.spec.ts',
-  outputDir: './test-results/phase-2-api',
+  outputDir: './test-results/' + suite,
   workers: 1,
   timeout: 60_000,
-  reporter: [['list'], ['html', { outputFolder: 'playwright-report/phase-2-api', open: 'never' }]],
+  reporter: [['list'], ['html', { outputFolder: 'playwright-report/' + suite, open: 'never' }]],
   use: {
     baseURL: web,
     channel: 'chrome',
@@ -27,7 +29,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: '"' + python + '" -m tests.browser_server ' + backendPort + ' ' + frontendPort,
+      command: '"' + python + '" -m tests.browser_server ' + backendPort + ' ' + frontendPort + (fakeAi ? ' --fake-ai' : ''),
       cwd: backend,
       url: api + '/api/v1/ready',
       reuseExistingServer: false,

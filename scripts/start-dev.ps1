@@ -3,7 +3,8 @@ param(
     [string]$Mode = 'Api',
     [string]$DevEnvRoot = 'D:\DevEnv',
     [int]$FrontendPort = 5173,
-    [int]$BackendPort = 8000
+    [int]$BackendPort = 8000,
+    [switch]$WithAiWorker
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,6 +26,7 @@ $previous = @{}
 foreach ($name in $names) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 
 $process = $null
+$worker = $null
 try {
     Initialize-BackendEnvironment -Root $root -CacheRoot $DevEnvRoot
     Initialize-LocalDatabase -Root $root -FrontendPort $FrontendPort
@@ -44,9 +46,16 @@ try {
     }
     if (-not $ready) { throw "API is not ready. Run setup-backend.ps1 -Action Migrate and check $stderr" }
     "FoodDiary API: http://127.0.0.1:$BackendPort/docs"
+    if ($WithAiWorker) {
+        $workerOut = Join-Path $backend "logs/ai-$stamp.out.log"
+        $workerErr = Join-Path $backend "logs/ai-$stamp.err.log"
+        $worker = Start-Process -FilePath $python -ArgumentList @('-m','app.ai_worker') -WorkingDirectory $backend -WindowStyle Hidden -RedirectStandardOutput $workerOut -RedirectStandardError $workerErr -PassThru
+        "FoodDiary AI worker log: $workerErr"
+    }
     & $frontendScript -Action Dev -Mode Api -Port $FrontendPort -BackendPort $BackendPort -DevEnvRoot $DevEnvRoot
 }
 finally {
+    if ($worker -and -not $worker.HasExited) { Stop-Process -InputObject $worker }
     if ($process -and -not $process.HasExited) { Stop-Process -InputObject $process }
     foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process') }
 }

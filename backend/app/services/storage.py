@@ -14,6 +14,7 @@ from app.core.config import Settings
 from app.core.database import utcnow
 from app.core.exceptions import ApiError
 from app.models import User
+from app.models.ai import AiJob, AiJobMedia
 from app.models.diary import MealMedia, MediaAsset
 
 FILE_KEY = re.compile(r"(originals|thumbnails|staging)/[0-9a-f]{32}(?:-(?:original|thumbnail))?\.webp")
@@ -35,6 +36,14 @@ def owned_media(db: Session, owner: str, media_id: str):
 
 def referenced(media_id):
     return exists().where(MealMedia.media_id == media_id)
+
+
+def used_by_ai(media_id, now):
+    return exists().where(
+        AiJobMedia.media_id == media_id, AiJobMedia.job_id == AiJob.id, AiJobMedia.user_id == AiJob.user_id,
+        ((AiJob.status == "pending") & (AiJob.expires_at > now))
+        | ((AiJob.status == "running") & ((AiJob.lease_until > now) | (AiJob.expires_at > now))),
+    )
 
 
 class LocalStorageProvider:
@@ -145,6 +154,8 @@ class LocalStorageProvider:
         asset = owned_media(db, owner, media_id)
         if db.scalar(select(referenced(asset.id))):
             raise ApiError(409, "media_in_use", "请先从用餐记录中移除这张图片。")
+        if db.scalar(select(used_by_ai(asset.id, utcnow()))):
+            raise ApiError(409, "media_in_ai_use", "这张照片正在识别，请先取消或等待任务结束。")
         keys = asset.original_key, asset.thumbnail_key
         db.delete(asset)
         db.commit()
@@ -155,6 +166,7 @@ class LocalStorageProvider:
         cutoff = now - timedelta(seconds=self.settings.media_orphan_seconds)
         rows = db.execute(select(MediaAsset.id, MediaAsset.user_id).where(
             MediaAsset.status == "draft", MediaAsset.updated_at < cutoff, ~referenced(MediaAsset.id),
+            ~used_by_ai(MediaAsset.id, now),
         )).all()
         db.rollback()
         removed_assets = 0
@@ -165,7 +177,7 @@ class LocalStorageProvider:
             lock_owner(db, owner)
             asset = db.scalar(select(MediaAsset).where(
                 MediaAsset.id == media_id, MediaAsset.user_id == owner, MediaAsset.status == "draft",
-                MediaAsset.updated_at < cutoff, ~referenced(MediaAsset.id),
+                MediaAsset.updated_at < cutoff, ~referenced(MediaAsset.id), ~used_by_ai(MediaAsset.id, utcnow()),
             ))
             if asset:
                 keys = asset.original_key, asset.thumbnail_key

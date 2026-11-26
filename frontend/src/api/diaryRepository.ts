@@ -18,6 +18,8 @@ export interface MediaInfo {
 }
 
 export interface MealItemInput {
+  id?: string
+  ai_reference?: { job_id: string; candidate_id: string }
   food_name: string
   category: string | null
   weight_g: number | null
@@ -41,7 +43,7 @@ export interface MealInput {
 export interface Meal extends Omit<MealInput, 'media_ids' | 'items'> {
   id: string
   version: number
-  items: (MealItemInput & { id: string; source: 'manual' })[]
+  items: (MealItemInput & { id: string; source: 'manual' | 'ai' | 'ai_edited'; ai_provider: string | null })[]
   media: MediaInfo[]
 }
 
@@ -66,10 +68,10 @@ export function useDiaryApi() {
     remove: (id: string, version: number) => api<void>(path('meals', id), { method: 'DELETE', query: { version } }),
     calendar: (month: string, signal: AbortSignal) => api<Calendar>('/calendar', { query: { month }, signal }),
     daily: (date: string, signal: AbortSignal) => api<Daily>('/statistics/daily', { query: { date }, signal }),
-    upload: (file: File) => {
+    upload: (file: File, signal?: AbortSignal) => {
       const body = new FormData()
       body.set('file', file)
-      return api<MediaInfo>('/media/upload', { method: 'POST', body })
+      return api<MediaInfo>('/media/upload', { method: 'POST', body, signal })
     },
     photo: (id: string, original: boolean, signal: AbortSignal) => api<Blob>(
       path('media', id) + (original ? '' : '/thumbnail'), { response: 'blob', signal },

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Install','Migrate','CheckSchema','Dev','Test','Benchmark','MediaCleanup','BenchmarkImages')]
+    [ValidateSet('Install','Migrate','CheckSchema','Dev','Test','Benchmark','MediaCleanup','BenchmarkImages','AiWorker')]
     [string]$Action = 'Install',
     [string]$DevEnvRoot = 'D:\DevEnv',
     [int]$Port = 8000,
@@ -63,6 +63,7 @@ try {
             switch ($Action) {
                 'Migrate' { & $python -m alembic upgrade head }
                 'CheckSchema' { & $python -m alembic current; if ($LASTEXITCODE -eq 0) { & $python -m alembic check } }
+                'AiWorker' { & $python -m app.ai_worker }
                 'MediaCleanup' {
                     if ($ApplyCleanup) { & $python -m app.media_cleanup --apply }
                     else { & $python -m app.media_cleanup }

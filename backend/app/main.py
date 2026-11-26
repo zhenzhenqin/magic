@@ -8,7 +8,7 @@ from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException
 
 from app.api.v1 import router
-from app.api import diary, media
+from app.api import ai, diary, media
 from app.core.config import Settings
 from app.core.database import build_engine
 from app.core.exceptions import ApiError, api_error, http_error, problem, unexpected_error, validation_error
@@ -34,7 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             engine.dispose()
 
-    app = FastAPI(title="FoodDiary API", version="0.3.0", debug=False, lifespan=lifespan)
+    app = FastAPI(title="FoodDiary API", version="0.4.0", debug=False, lifespan=lifespan)
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -63,4 +63,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router, prefix="/api/v1")
     app.include_router(diary.router, prefix="/api/v1")
     app.include_router(media.router, prefix="/api/v1")
+    app.include_router(ai.router, prefix="/api/v1")
     return app

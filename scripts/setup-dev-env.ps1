@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Check', 'Install', 'Dev', 'Typecheck', 'Build', 'Test', 'Screenshots', 'TestApi', 'ScreenshotsApi', 'ScreenshotsDiary')]
+    [ValidateSet('Check', 'Install', 'Dev', 'Typecheck', 'Build', 'Test', 'Screenshots', 'TestApi', 'ScreenshotsApi', 'ScreenshotsDiary', 'TestAi', 'ScreenshotsAi')]
     [string]$Action = 'Dev',
     [string]$DevEnvRoot = 'D:\DevEnv',
     [int]$Port = 5173,
@@ -28,6 +28,7 @@ $settings = @{
     TMPDIR = Join-Path $cacheRoot 'tmp'
     FOODDIARY_PORT = [string]$Port
     FOODDIARY_BACKEND_PORT = [string]$BackendPort
+    FOODDIARY_BROWSER_FAKE_AI = if ($Action -in 'TestAi', 'ScreenshotsAi') { '1' } else { '0' }
     VITE_APP_MODE = $buildMode.ToLowerInvariant()
 }
 
@@ -73,9 +74,11 @@ try {
         'Build' { & pnpm build }
         'Test' { & pnpm test }
         'Screenshots' { & pnpm screenshots }
-        'TestApi' { & pnpm exec playwright test --config playwright.api.config.ts --grep-invert '@screenshots' }
+        'TestApi' { & pnpm exec playwright test --config playwright.api.config.ts --grep-invert '@screenshots|@fake-ai' }
         'ScreenshotsApi' { & pnpm exec playwright test --config playwright.api.config.ts auth.api.spec.ts --grep '@screenshots' --reporter=list }
         'ScreenshotsDiary' { & pnpm exec playwright test --config playwright.api.config.ts meal.api.spec.ts --grep '@screenshots' --reporter=list }
+        'TestAi' { & pnpm exec playwright test --config playwright.api.config.ts ai.api.spec.ts --grep '@fake-ai' --grep-invert '@screenshots' }
+        'ScreenshotsAi' { & pnpm exec playwright test --config playwright.api.config.ts ai.api.spec.ts --grep '@screenshots' --reporter=list }
     }
     if ($LASTEXITCODE -ne 0) { throw "FoodDiary action '$Action' exited with code $LASTEXITCODE." }
 }

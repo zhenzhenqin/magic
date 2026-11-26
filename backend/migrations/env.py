@@ -3,7 +3,7 @@ from alembic import context
 from app.core.config import Settings
 from app.core.database import Base, UTCDateTime, build_engine
 from app import models  # Import mapped tables before reading metadata.
-from app.models import diary  # Register the diary and media tables.
+from app.models import ai, diary  # Register diary, media and AI tables.
 
 config = context.config
 metadata = Base.metadata

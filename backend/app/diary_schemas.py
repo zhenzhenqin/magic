@@ -17,6 +17,8 @@ MealNote = Annotated[str, StringConstraints(strip_whitespace=True, max_length=10
 
 
 class ItemInput(Input):
+    id: UUID | None = None
+    ai_reference: "AiReference | None" = None
     food_name: Food
     category: Category | None = None
     weight_g: Nutrient | None = None
@@ -25,6 +27,11 @@ class ItemInput(Input):
     carbohydrates_g: Nutrient | None = None
     fat_g: Nutrient | None = None
     note: ItemNote = ""
+
+
+class AiReference(Input):
+    job_id: UUID
+    candidate_id: UUID
 
 
 class MealInput(Input):
@@ -96,7 +103,10 @@ class ItemView(BaseModel):
     fat_g: float | None
     note: str
     sort_order: int
-    source: str
+    source: Literal["manual", "ai", "ai_edited"]
+    ai_job_id: UUID | None
+    ai_candidate_id: UUID | None
+    ai_provider: str | None
 
 
 class MealView(BaseModel):

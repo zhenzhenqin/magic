@@ -8,10 +8,12 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.core.config import Settings
 from app.core.database import utcnow
 from app.core.exceptions import ApiError
 from app.diary_schemas import CalendarDay, CalendarView, DailyView, ItemView, MealInput, MealPage, MealView, MediaView, NutrientSummary
 from app.models.diary import Meal, MealItem, MealMedia, MealRequest, MediaAsset
+from app.services.meal_sources import estimate_digest, item_values, verify_candidate
 from app.services.storage import MEDIA_MISSING, lock_owner
 
 NUTRIENTS = ("calories_kcal", "protein_g", "carbohydrates_g", "fat_g")
@@ -61,19 +63,61 @@ def payload(data: MealInput):
                 timezone=data.timezone, note=data.note)
 
 
-def replace_details(db: Session, owner: str, identifier: str, data: MealInput):
+def update_items(db: Session, settings: Settings, owner: str, identifier: str, data: MealInput):
+    previous = {row.id: row for row in db.scalars(select(MealItem).where(
+        MealItem.meal_id == identifier,
+    ).order_by(MealItem.sort_order))}
+    explicit = [str(item.id) for item in data.items if item.id]
+    if not set(explicit).issubset(previous):
+        raise ApiError(404, "meal_item_not_found", "食物明细不存在或不可访问。")
+    if len(explicit) != len(set(explicit)):
+        raise ApiError(422, "meal_item_duplicate", "同一食物明细只能提交一次。")
+    kept, candidates = set(), set()
+    ordered = []
+    for item in data.items:
+        values = item_values(item)
+        row = previous[str(item.id)] if item.id else None
+        if not row and not item.ai_reference:
+            # Phase 3 clients did not send IDs. Preserve exact matches without guessing at changed foods.
+            row = next((old for old in previous.values() if old.id not in explicit and old.id not in kept
+                        and all(getattr(old, name) == value for name, value in values.items())), None)
+        if row:
+            kept.add(row.id)
+            if item.ai_reference:
+                raise ApiError(422, "meal_item_reference", "已有食物明细的识别来源不能更换。")
+            lineage = {}
+        else:
+            lineage = verify_candidate(db, settings, owner, identifier, item.ai_reference) if item.ai_reference else {}
+            row = MealItem(id=str(uuid4()), meal_id=identifier, source="manual", **lineage)
+        if row.ai_candidate_id:
+            if row.ai_candidate_id in candidates:
+                raise ApiError(422, "ai_candidate_duplicate", "同一识别候选只能保存一次。")
+            candidates.add(row.ai_candidate_id)
+        ordered.append((row, values))
+    for old in previous.values():
+        if old.id in kept:
+            old.sort_order = -old.sort_order - 1
+        else:
+            db.delete(old)
+    db.flush()  # Free the nonnegative positions before reordering under the unique constraint.
+    for order, (row, values) in enumerate(ordered):
+        for name, value in values.items():
+            setattr(row, name, value)
+        row.sort_order = order
+        if row.ai_original_digest:
+            row.source = "ai" if estimate_digest(values) == row.ai_original_digest else "ai_edited"
+        db.add(row)
+
+
+def replace_details(db: Session, settings: Settings, owner: str, identifier: str, data: MealInput):
     previous = db.scalars(select(MealMedia.media_id).where(MealMedia.meal_id == identifier)).all()
     selected = [str(media) for media in data.media_ids]
     if selected:
         valid = set(db.scalars(select(MediaAsset.id).where(MediaAsset.user_id == owner, MediaAsset.id.in_(selected))))
         if valid != set(selected):
             raise ApiError(404, "media_not_found", MEDIA_MISSING)
-    db.execute(delete(MealItem).where(MealItem.meal_id == identifier))
+    update_items(db, settings, owner, identifier, data)
     db.execute(delete(MealMedia).where(MealMedia.meal_id == identifier))
-    db.add_all([
-        MealItem(id=str(uuid4()), meal_id=identifier, sort_order=index, **item.model_dump())
-        for index, item in enumerate(data.items)
-    ])
     db.add_all([
         MealMedia(user_id=owner, meal_id=identifier, media_id=asset, sort_order=index)
         for index, asset in enumerate(selected)
@@ -95,8 +139,13 @@ def sync_media(db: Session, owner: str, media_ids: set[str]):
                        .values(status=status, updated_at=utcnow()))
 
 
-def create(db: Session, owner: str, key: str, data: MealInput) -> tuple[MealView, bool]:
-    body = json.dumps(data.model_dump(), sort_keys=True, separators=(",", ":"),
+def create(db: Session, settings: Settings, owner: str, key: str, data: MealInput) -> tuple[MealView, bool]:
+    serialized = data.model_dump()
+    for item in serialized["items"]:
+        for name in ("id", "ai_reference"):
+            if item[name] is None:
+                del item[name]  # Keep phase 3 request fingerprints valid.
+    body = json.dumps(serialized, sort_keys=True, separators=(",", ":"),
                       default=lambda value: str(value.normalize()) if isinstance(value, Decimal) else str(value))
     digest = sha256(body.encode()).hexdigest()
     lock_owner(db, owner)
@@ -110,7 +159,7 @@ def create(db: Session, owner: str, key: str, data: MealInput) -> tuple[MealView
     identifier = str(uuid4())
     db.add(Meal(id=identifier, user_id=owner, **payload(data)))
     db.flush()
-    replace_details(db, owner, identifier, data)
+    replace_details(db, settings, owner, identifier, data)
     db.add(MealRequest(user_id=owner, key=key, fingerprint=digest, meal_id=identifier))
     result = serialize(owned(db, owner, identifier))
     db.commit()
@@ -121,14 +170,14 @@ def version_conflict():
     return ApiError(409, "meal_version_conflict", "这条记录已在其他位置更新，请重新加载后再编辑。")
 
 
-def edit(db: Session, owner: str, identifier: str, data):
+def edit(db: Session, settings: Settings, owner: str, identifier: str, data):
     lock_owner(db, owner)
     result = db.execute(update(Meal).where(Meal.id == identifier, Meal.user_id == owner, Meal.version == data.version)
                         .values(**payload(data), version=Meal.version + 1, updated_at=utcnow()))
     if result.rowcount != 1:
         owned(db, owner, identifier)
         raise version_conflict()
-    replace_details(db, owner, identifier, data)
+    replace_details(db, settings, owner, identifier, data)
     result = serialize(owned(db, owner, identifier))
     db.commit()
     return result

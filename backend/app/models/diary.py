@@ -44,6 +44,12 @@ class MealItem(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     sort_order: Mapped[int]
     source: Mapped[str] = mapped_column(String(12), default="manual")
+    ai_job_id: Mapped[str | None] = mapped_column(String(36))
+    ai_candidate_id: Mapped[str | None] = mapped_column(String(36))
+    ai_provider: Mapped[str | None] = mapped_column(String(16))
+    ai_model: Mapped[str | None] = mapped_column(String(100))
+    ai_prompt_version: Mapped[str | None] = mapped_column(String(24))
+    ai_original_digest: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 

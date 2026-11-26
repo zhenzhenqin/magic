@@ -8,7 +8,7 @@
 | Android | Capacitor 8 候选，保留现有 JDK 21.0.9 | 当前 Node.js 满足 Capacitor 8 要求。阶段 9 核验实际 Android Studio、SDK 36、Build Tools、Gradle 与 Android Gradle Plugin 组合 |
 | 后端 | Python 3.13 候选，FastAPI、SQLAlchemy 2.x、Alembic | 本机 Python 3.13.9 可用。阶段 2 验证后端依赖和 MySQL 驱动，阶段 5 核验 Linux x86_64 的图像依赖与 ONNX Runtime wheel |
 | 数据库 | MySQL 8.4 LTS，项目独立数据库、用户和迁移 | 本机 MySQL 8.0.34 可供开发环境评估。迁移验收使用独立的 8.4 实例。服务器现有 MariaDB 留给既有业务使用 |
-| AI 食物识别 | 优先评估外部 Qwen-VL，通过服务端适配调用 | 可把多模态推理放在外部服务。阶段 4 根据质量、费用、延迟和图片处理约束选定具体模型与版本 |
+| AI 食物识别 | 服务端通过百炼的 OpenAI 兼容接口接入 Qwen3-VL | 首测候选 `qwen3-vl-flash`，对照候选 `qwen3-vl-plus`。实际地区权限、质量、延迟与费用待联调 |
 | CPU 抠图 | rembg、ONNX Runtime CPU、Pillow，独立 Worker | 阶段 5 优先测 `u2netp` 与单任务并发，结合质量、峰值 RSS、CPU 和吞吐量决定模型、上线并发及 Worker 部署位置 |
 | 图片存储 | 私有本地文件系统，预留对象存储接口 | 起步组件较少。项目需验证访问授权、备份恢复和真实图片存储增长 |
 | 部署 | Docker Compose + Nginx，结合试运行确定部署位置 | 现有主机 Compose 可用，旧业务停服后 80/443 空闲、可用内存约 1.5 GiB。阶段 8 依据压测、安全支持、入口和运维授权确定部署方案 |
@@ -47,3 +47,12 @@
 | 私有媒体 | Pillow 13.0.0、python-multipart 0.0.34。流式限额、WebP 规范化、私有存储、单解码槽与超期孤立回收 |
 | 多标签页会话 | 旧 Bearer 只能绑定其签名会话，不能续期或清除不同会话 Cookie。标签页身份变更时清除先前数据和在途请求 |
 | 前端 | API 模式调用真实用户接口，月历只请求当月摘要和缩略图。Demo 路由与数据源维持独立 |
+
+
+## 阶段 4
+
+- 复用 httpx、Pydantic 与 Pillow。使用有明确版本的中文提示词和 JSON Object 输出，再做应用侧严格校验与估算合理性检查。
+- 任务、配额和请求重放使用同一文件 SQLite。短写事务领取和结算，网络请求在事务外。发送情况未知时保留额度记录，并由用户明确确认后再试。
+- 暂定每日每用户 10 次、全局 30 次，按 UTC 结算。项目记录尝试和供应商返回的 Token，不猜测账单价格。
+- 候选归属于账号和识别任务，采用稳定 UUID。确认保存后复制精简来源到明细，让正式历史独立于任务保留期。
+- 停在本地开发与模拟验收。中国内地或国际站账号应用各自工作空间的地址及策略，实际地区由联调账号决定。[百炼兼容接口](https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope)
