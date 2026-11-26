@@ -27,3 +27,13 @@
 | 后续模型、Docker 与 WSL | Hugging Face、rembg 和 ONNX 缓存按工具支持的变量配置到 `D:/DevEnv/models`。使用 Docker Desktop 官方支持的方法把数据文件设到 `D:/DevEnv/docker`，新增 WSL 发行版优先在 D 盘存放虚拟磁盘。已有工具继续复用 |
 
 后续目录按需创建。大型资源下载、解压、构建和测试使用 D 盘路径。
+
+## 阶段 2
+
+| 决策 | 实施 |
+| --- | --- |
+| 数据库 | SQLite 用于阶段 2 本地开发，通过 `DATABASE_URL` 配置。外键开启，WAL 和 5 秒忙等待。MySQL 8.4 仍为生产候选，尚未验证 |
+| 依赖 | Python 3.13.9 保持不变，锁文件固定运行和测试依赖。pip 配置隔离在项目进程，虚拟环境在 `backend/.venv` |
+| 认证 | Argon2id + HS256 短期 JWT + 可撤销和轮换的不透明刷新凭据。每次受保护请求查询关联会话 |
+| Web 交付 | Vite 静态选择 API 或 Demo 根模块与路由。API 生产构建排除 Demo 数据模块，开发用 Vite Proxy 转发同源请求 |
+| 测试 | pytest 和 Playwright 使用各自 D 盘隔离 SQLite 库及临时密钥，避免修改开发数据 |

@@ -2,9 +2,9 @@
 import { BookOpen, Camera, HeartHandshake, LibraryBig, Sprout, UserRound } from 'lucide-vue-next'
 import { useRoute } from 'vue-router'
 import AvatarBadge from '../components/AvatarBadge.vue'
-import { useDiary } from '../stores/diary'
+import type { User } from '../types/domain'
 
-const diary = useDiary()
+defineProps<{ account: User; demo?: boolean }>()
 const route = useRoute()
 const navigation = [
   { label: '手账', to: '/', icon: BookOpen, section: ['/', '/calendar'] },
@@ -32,17 +32,17 @@ const isActive = (section: string[]) => section.some(path => route.path === path
           <span>{{ item.label }}</span>
         </RouterLink>
       </nav>
-      <RouterLink to="/me" class="rail-account" aria-label="当前演示账号">
-        <AvatarBadge :user="diary.account" size="small" />
-        <span><strong>{{ diary.account.nickname }}</strong><small>演示账号</small></span>
+      <RouterLink to="/me" class="rail-account" :aria-label="demo ? '当前演示账号' : '当前账号'">
+        <AvatarBadge :user="account" size="small" />
+        <span><strong>{{ account.nickname }}</strong><small>{{ demo ? '演示账号' : '个人账号' }}</small></span>
       </RouterLink>
     </aside>
     <header class="mobile-header">
       <RouterLink to="/" class="brand" aria-label="FoodDiary 美食手账">
         <span class="brand-mark"><Sprout aria-hidden="true" /></span><span>FoodDiary</span>
       </RouterLink>
-      <RouterLink to="/me" class="mobile-account" :aria-label="'演示账号 ' + diary.account.nickname">
-        <AvatarBadge :user="diary.account" size="small" />
+      <RouterLink to="/me" class="mobile-account" :aria-label="(demo ? '演示账号 ' : '当前账号 ') + account.nickname">
+        <AvatarBadge :user="account" size="small" />
       </RouterLink>
     </header>
     <main id="main" class="workspace" tabindex="-1">

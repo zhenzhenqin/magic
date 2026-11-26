@@ -2,7 +2,9 @@
 
 这份文档供阶段审查。组件边界、应用版本与部署位置在对应阶段结合验证结果确定。
 
-阶段 1 的可运行原型位于 `frontend/`。Vue Router 按页面分包，Pinia 管理演示账号、餐次、图鉴收藏和好友关系。`api/mockRepository.ts` 按当前查看者进行单向授权投影，`api/mediaRepository.ts` 管理本地照片。真实 API、账号认证及安全访问控制在后端阶段接入。
+阶段 1 的 Demo 保留原有 Vue 路由、Pinia、Mock Repository 和 IndexedDB 媒体。阶段 2 增加独立 API 入口、真实认证 Pinia Store 与 HTTP Repository。Vite 在启动或构建时只解析所选模式的入口，API 构建只挂载真实账号页面及未开放模块的空状态。
+
+阶段 2 后端由 FastAPI、同步 SQLAlchemy、Alembic 与本地 SQLite 组成。认证依赖从已验证且有效的服务端会话解析账户，个人资料和设置按该账户读写。短期访问令牌留在内存，浏览器通过 HttpOnly Cookie 刷新。[API](API.md) · [数据库](DATABASE.md) · [安全](SECURITY.md)
 
 ```text
 浏览器 / Capacitor Android

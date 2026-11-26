@@ -42,6 +42,8 @@ build/
 /uploads/
 /backups/
 /secrets/
+/backend/data/
+/backend/logs/
 *.log
 *.onnx
 

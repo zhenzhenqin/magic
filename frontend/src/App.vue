@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import AppShell from './layouts/AppShell.vue'
+import { Root } from '@fooddiary/runtime'
 </script>
 
 <template>
-  <AppShell />
+  <Root />
 </template>

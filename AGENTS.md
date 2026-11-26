@@ -29,3 +29,9 @@
 - 后续 Python 虚拟环境保留在项目内，`PIP_CACHE_DIR` 使用 `D:/DevEnv/pip-cache`。Android SDK 使用 `D:/DevEnv/Android/Sdk`，AVD 使用 `D:/DevEnv/Android/avd`，`GRADLE_USER_HOME` 使用 `D:/DevEnv/gradle`。APK 和 Android 测试产物保留在 D 盘。
 - 在需要时把 Hugging Face、rembg 和 ONNX 缓存按各自支持的变量配置在 `D:/DevEnv/models` 下。Docker Desktop 数据磁盘使用官方支持方式配置到 `D:/DevEnv/docker`，新增 WSL 发行版优先使用 D 盘虚拟磁盘。已有工具程序本体可继续复用。
 - 仅为当前阶段创建所需目录。未经授权不得修改 Windows 系统目录或全局环境、迁移或注销现有 WSL、清理其他项目或 Docker 数据，以及通过目录链接迁移系统文件。
+- 后端用 `scripts/setup-backend.ps1` 管理 `backend/.venv`、`D:/DevEnv/pip-cache` 和 D 盘临时目录。安装时忽略共享 pip target 配置，并核验包来自项目虚拟环境。`backend/data` 和 `backend/logs` 为本地运行目录，测试用独立 D 盘临时库。
+
+## 账号与模式
+
+- Demo 与 API 在启动或构建时分开选择。API 模式使用服务端会话，账号切换与登录失败处理都保持真实身份边界。
+- 客户端访问令牌只留在内存，刷新凭据由 HttpOnly Cookie 托管。受保护资源从服务端认证身份确定归属，客户端提交的用户 ID 不参与归属判断。

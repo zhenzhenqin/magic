@@ -96,7 +96,7 @@
 
 ## 八、Git 信息
 
-阶段分支为 `feature/phase-1-ui`，基于阶段 0 的 `4b4a8e9`。本次交付包含前端源码、测试与锁文件，新增 D 盘启动脚本、素材许可和阶段报告，并更新 `AGENTS.md`、`README.md`、`PROGRESS.md`、`.gitignore` 及架构决策文档。完整文件列表可从阶段分支的提交差异查看。[GitHub 阶段分支](https://github.com/zhenzhenqin/magic/tree/feature/phase-1-ui)
+阶段分支为 `feature/phase-1-ui`，基于阶段 0 的 `4b4a8e9`。阶段 1 最终 SHA 为 `75023b4475a5541d655b87f901a5f3179f1f5f3e`，阶段 2 开始前已与远端逐字核对。本次交付包含前端源码、测试与锁文件，新增 D 盘启动脚本、素材许可和阶段报告，并更新 `AGENTS.md`、`README.md`、`PROGRESS.md`、`.gitignore` 及架构决策文档。[阶段 1 提交](https://github.com/zhenzhenqin/magic/commit/75023b4475a5541d655b87f901a5f3179f1f5f3e)
 
 ## 九、问题与风险
 

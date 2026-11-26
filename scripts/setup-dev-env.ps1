@@ -1,8 +1,11 @@
 param(
-    [ValidateSet('Check', 'Install', 'Dev', 'Typecheck', 'Build', 'Test', 'Screenshots')]
+    [ValidateSet('Check', 'Install', 'Dev', 'Typecheck', 'Build', 'Test', 'Screenshots', 'TestApi', 'ScreenshotsApi')]
     [string]$Action = 'Dev',
     [string]$DevEnvRoot = 'D:\DevEnv',
-    [int]$Port = 5173
+    [int]$Port = 5173,
+    [int]$BackendPort = 8000,
+    [ValidateSet('Api', 'Demo')]
+    [string]$Mode = 'Demo'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,6 +16,7 @@ if ([IO.Path]::GetPathRoot($cacheRoot) -ne 'D:\' -or [IO.Path]::GetPathRoot($pro
     throw 'FoodDiary and its development cache must be on D:.'
 }
 
+$buildMode = if ($Action -eq 'Build' -and -not $PSBoundParameters.ContainsKey('Mode')) { 'Api' } else { $Mode }
 $settings = @{
     npm_config_store_dir = Join-Path $cacheRoot 'pnpm-store'
     npm_config_cache_dir = Join-Path $cacheRoot 'pnpm-store\metadata'
@@ -23,6 +27,8 @@ $settings = @{
     TMP = Join-Path $cacheRoot 'tmp'
     TMPDIR = Join-Path $cacheRoot 'tmp'
     FOODDIARY_PORT = [string]$Port
+    FOODDIARY_BACKEND_PORT = [string]$BackendPort
+    VITE_APP_MODE = $buildMode.ToLowerInvariant()
 }
 
 $oldEnvironment = @{}
@@ -67,6 +73,8 @@ try {
         'Build' { & pnpm build }
         'Test' { & pnpm test }
         'Screenshots' { & pnpm screenshots }
+        'TestApi' { & pnpm exec playwright test --config playwright.api.config.ts --grep-invert '@screenshots' }
+        'ScreenshotsApi' { & pnpm exec playwright test --config playwright.api.config.ts --grep '@screenshots' --reporter=list }
     }
     if ($LASTEXITCODE -ne 0) { throw "FoodDiary action '$Action' exited with code $LASTEXITCODE." }
 }
