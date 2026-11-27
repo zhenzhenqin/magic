@@ -3,6 +3,7 @@ import json
 import sqlite3
 import sys
 from contextlib import closing
+from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -17,7 +18,7 @@ from app.services.ai_prompt import disclosure
 from app.services.ai_provider import Analysis, FakeVisionProvider, Usage
 from tests import ai_benchmark
 from tests.ai_benchmark import run_cases
-from tests.benchmark_budget import BudgetPause, LiveBudget, PriceTier
+from tests.benchmark_budget import BudgetPause, LedgerEstimate, LiveBudget, PriceTier
 from tests.test_ai_jobs import env, new_job, photo, worker
 from tests.test_deepseek import deepseek_settings
 from tests.test_identity import bearer, signed_in
@@ -168,3 +169,16 @@ def test_deepseek_budget_carries_both_batches_without_repricing_qwen(env):
         assert total.attempts == 2 and total.amount == Decimal(".0288")
         with pytest.raises(BudgetPause, match="保守上界"):
             pricing.require_next(total, 5)
+
+
+def test_compact_deepseek_only_releases_one_authorized_call_under_one_yuan():
+    price = (PriceTier.parse("1048576:2:8"),)
+    full = LiveBudget(1, Decimal(".99"), "CNY", "official", price, "origin", "deepseek-flash", 1024, "deepseek")
+    empty = LedgerEstimate(0, Decimal(0))
+    with pytest.raises(BudgetPause, match="保守上界"):
+        full.safe_launch_limit(empty, 1)
+    compact = replace(full, deepseek_compact_request=True)
+    assert compact.next_call_upper_bound == Decimal(".17408")
+    assert compact.safe_launch_limit(empty, 1) == 1
+    with pytest.raises(BudgetPause, match="次数已达到"):
+        compact.require_next(LedgerEstimate(1, Decimal(".01")), 1)

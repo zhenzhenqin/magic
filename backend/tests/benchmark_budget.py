@@ -4,9 +4,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from sqlite3 import Connection
 
+from app.core.config import DEEPSEEK_COMPACT_BODY_BYTES, DEEPSEEK_COMPACT_OUTPUT_TOKENS
+
 FLASH_INPUT_LIMIT = 262_144  # Use the entire published context as an upper bound for input.
 FLASH_TIERS = (32_768, 131_072, FLASH_INPUT_LIMIT)
 DEEPSEEK_FLASH_TIERS = (1_048_576,)  # Round DeepSeek's published 1M context up for the local bound.
+# Allow one token per wire byte, 1024 more for the image and 16 Ki for server-side prompt framing.
+DEEPSEEK_COMPACT_INPUT_ESTIMATE = DEEPSEEK_COMPACT_BODY_BYTES + 1024 + 16_384
 
 
 class BudgetPause(ValueError):
@@ -48,14 +52,19 @@ class LiveBudget:
     model: str
     max_output: int
     provider: str = "qwen"
+    deepseek_compact_request: bool = False
 
     def __post_init__(self):
         limits = {"qwen": FLASH_TIERS, "deepseek": DEEPSEEK_FLASH_TIERS}
         if tuple(tier.max_input for tier in self.tiers) != limits.get(self.provider):
             raise BudgetPause("价目必须覆盖所选供应商的完整模型输入范围")
+        if self.deepseek_compact_request and (self.provider != "deepseek" or self.max_output > DEEPSEEK_COMPACT_OUTPUT_TOKENS):
+            raise BudgetPause("仅支持单图、输出不超过 1024 Token 的 DeepSeek 联调")
 
     @property
     def next_call_upper_bound(self) -> Decimal:
+        if self.deepseek_compact_request:
+            return self.tiers[0].estimate(DEEPSEEK_COMPACT_INPUT_ESTIMATE, self.max_output)
         return max(tier.estimate(tier.max_input, self.max_output) for tier in self.tiers)
 
     def estimate_attempt(self, record) -> Decimal:

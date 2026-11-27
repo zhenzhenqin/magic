@@ -310,7 +310,8 @@ def main():
         try:
             budget = LiveBudget(args.authorized_attempts, args.approved_budget, args.currency, args.price_reference,
                                 tuple(sorted(args.price_tier, key=lambda tier: tier.max_input)),
-                                processing_identity(settings), settings.ai_model, settings.ai_max_output_tokens, provider)
+                                processing_identity(settings), settings.ai_model, settings.ai_max_output_tokens, provider,
+                                deepseek_compact_request=settings.ai_deepseek_compact_request)
         except BudgetPause as error:
             parser.error(str(error))
     with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as ledger:

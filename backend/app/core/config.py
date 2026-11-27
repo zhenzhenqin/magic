@@ -12,6 +12,8 @@ AiProvider = Literal["qwen", "deepseek", "fake"]
 REAL_AI_PROVIDERS = ("qwen", "deepseek")
 DEEPSEEK_ENDPOINT = "https://api.deepseek.com"
 DEEPSEEK_VISION_MODEL = "deepseek-flash"
+DEEPSEEK_COMPACT_BODY_BYTES = 65_536
+DEEPSEEK_COMPACT_OUTPUT_TOKENS = 1_024
 QWEN_REGIONS = "cn-beijing|ap-southeast-1|cn-hongkong|us-east-1|ap-northeast-1|eu-central-1"
 QWEN_ENDPOINT = re.compile(
     r"https://(?:dashscope(?:-intl)?\.aliyuncs\.com|cn-hongkong\.dashscope\.aliyuncs\.com|"
@@ -78,6 +80,7 @@ class Settings(BaseSettings):
     ai_global_daily_limit: int = Field(default=30, ge=1, le=10000)
     ai_qwen_cumulative_limit: int = Field(default=0, ge=0, le=1_000_000)
     ai_deepseek_cumulative_limit: int = Field(default=0, ge=0, le=1_000_000)
+    ai_deepseek_compact_request: bool = False
     ai_max_attempts: int = Field(default=3, ge=1, le=5)
     ai_job_retention_seconds: int = Field(default=604_800, ge=86_400, le=2_592_000)
     ai_usage_retention_seconds: int = Field(default=2_592_000, ge=86_400, le=7_776_000)
@@ -112,6 +115,9 @@ class Settings(BaseSettings):
             raise ValueError("Production prohibits the fake AI provider")
         if self.ai_provider == "deepseek" and self.ai_model not in ("", DEEPSEEK_VISION_MODEL):
             raise ValueError("DeepSeek food recognition requires deepseek-flash")
+        if self.ai_deepseek_compact_request and (self.ai_provider != "deepseek" or self.ai_max_images != 1
+                                                or self.ai_max_output_tokens > DEEPSEEK_COMPACT_OUTPUT_TOKENS):
+            raise ValueError("Compact DeepSeek requests require one image and at most 1024 output tokens")
         if self.ai_enabled and (self.db_url.get_backend_name() != "sqlite" or self.db_url.database in (None, "", ":memory:")):
             raise ValueError("AI jobs require a shared SQLite file")
         return self

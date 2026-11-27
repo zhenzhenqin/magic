@@ -3,16 +3,17 @@ import base64
 import json
 import sqlite3
 from contextlib import closing
+from pathlib import Path
 from secrets import token_urlsafe
 
 import httpx
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from app.core.config import DEEPSEEK_ENDPOINT, DEEPSEEK_VISION_MODEL, Settings
+from app.core.config import DEEPSEEK_COMPACT_BODY_BYTES, DEEPSEEK_ENDPOINT, DEEPSEEK_VISION_MODEL, Settings
 from app.models.ai import AiCallBudget
 from app.services.ai_prompt import CONSENT_VERSION, DEEPSEEK_CONSENT_VERSION, DEEPSEEK_PRIVACY_URL
-from app.services.ai_provider import DeepSeekVisionProvider, ProviderError, build_provider
+from app.services.ai_provider import DeepSeekVisionProvider, ProviderError, build_provider, prepare_photo
 from tests.support import isolated_settings, migrate
 from tests.test_ai_jobs import JOBS, attempts, env, new_job, photo, worker
 from tests.test_ai_provider import food, response, result
@@ -61,6 +62,25 @@ def test_deepseek_sends_official_vision_and_json_parameters(deepseek, images):
     assert answer.result.foods[0].food_name == "白米饭"
     assert (answer.usage.input_tokens, answer.usage.output_tokens) == (181, 125)
     assert isinstance(build_provider(deepseek), DeepSeekVisionProvider)
+
+
+def test_compact_deepseek_bounds_request_before_network(deepseek):
+    deepseek.ai_max_images = 1
+    deepseek.ai_deepseek_compact_request = True
+    calls = []
+
+    def handle(request):
+        calls.append(len(request.content))
+        return response(result(food()))
+
+    photo_path = Path(__file__).resolve().parents[2] / "frontend/src/assets/food/croissant.webp"
+    assert analyze(deepseek, handle, [prepare_photo(photo_path, 1024)]).result.status == "recognized"
+    assert 0 < calls[0] <= DEEPSEEK_COMPACT_BODY_BYTES
+    for images in ([b"one", b"two"], [b"x" * DEEPSEEK_COMPACT_BODY_BYTES]):
+        with pytest.raises(ProviderError, match="ai_image_invalid") as error:
+            analyze(deepseek, handle, images)
+        assert not error.value.sent
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize(("content", "finish"), [

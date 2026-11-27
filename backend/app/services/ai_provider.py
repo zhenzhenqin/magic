@@ -12,7 +12,7 @@ from PIL import Image
 from pydantic import ValidationError
 
 from app.ai_schemas import Recognition
-from app.core.config import DEEPSEEK_VISION_MODEL, AiProvider, Settings, validate_ai_base_url
+from app.core.config import DEEPSEEK_COMPACT_BODY_BYTES, DEEPSEEK_VISION_MODEL, AiProvider, Settings, validate_ai_base_url
 from app.services.ai_prompt import SYSTEM_PROMPT
 
 MAX_IMAGE_BYTES = 640 * 1024
@@ -103,6 +103,9 @@ class CompatibleVisionProvider:
             "max_tokens": settings.ai_max_output_tokens, "response_format": {"type": "json_object"},
             "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": content}],
         }
+        payload = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        if settings.ai_deepseek_compact_request and (len(images) != 1 or len(payload) > DEEPSEEK_COMPACT_BODY_BYTES):
+            raise ProviderError("ai_image_invalid", sent=False)
         timeout = httpx.Timeout(settings.ai_timeout_seconds, connect=min(8, settings.ai_timeout_seconds))
         usage = Usage()
         secret = settings.ai_api_key.get_secret_value()
@@ -111,8 +114,8 @@ class CompatibleVisionProvider:
                 timeout=timeout, trust_env=False, follow_redirects=False, transport=self.transport,
             ) as client:
                 async with client.stream(
-                    "POST", endpoint + "/chat/completions", json=body,
-                    headers={"Authorization": "Bearer " + secret},
+                    "POST", endpoint + "/chat/completions", content=payload,
+                    headers={"Authorization": "Bearer " + secret, "Content-Type": "application/json"},
                 ) as response:
                     upstream = response.headers.get("x-request-id", "")
                     usage = Usage(request_id=request_id(upstream) if secret not in upstream else None)

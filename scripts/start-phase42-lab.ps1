@@ -6,6 +6,7 @@ param(
     [string]$Provider = 'deepseek',
     [string[]]$BudgetOptions,
     [switch]$FirstBrowserCall,
+    [switch]$CompactDeepSeekRequest,
     [string[]]$BenchmarkOptions
 )
 
@@ -20,6 +21,9 @@ if ($PrepareOnly -and $AuthorizedCallLimit) { throw 'Preparing the lab requires 
 if ($AuthorizedCallLimit -and -not $BudgetOptions) { throw 'Supply the verified price tiers, region, currency and approved amount in -BudgetOptions.' }
 if ($FirstBrowserCall -and ($PrepareOnly -or -not $AuthorizedCallLimit -or $BenchmarkOptions)) {
     throw 'The first browser call needs an approved live launch without benchmark options.'
+}
+if ($CompactDeepSeekRequest -and (-not $FirstBrowserCall -or $Provider -ne 'deepseek' -or $AuthorizedCallLimit -ne 1)) {
+    throw 'The compact request mode requires one authorized first browser call with DeepSeek.'
 }
 if ($BenchmarkOptions -and ($PrepareOnly -or -not $AuthorizedCallLimit)) {
     throw 'A live benchmark requires a previously approved, positive cumulative limit.'
@@ -63,8 +67,10 @@ $settings = @{
     AI_QWEN_CUMULATIVE_LIMIT = '0'
     AI_DEEPSEEK_CUMULATIVE_LIMIT = '0'
     AI_MAX_CONCURRENT_JOBS = '1'
+    AI_MAX_IMAGES = if ($CompactDeepSeekRequest) { '1' } else { '3' }
     AI_MAX_ATTEMPTS = '1'
     AI_MAX_OUTPUT_TOKENS = '1024'
+    AI_DEEPSEEK_COMPACT_REQUEST = if ($CompactDeepSeekRequest) { 'true' } else { 'false' }
     TEMP = 'D:\DevEnv\tmp'
     TMP = 'D:\DevEnv\tmp'
     TMPDIR = 'D:\DevEnv\tmp'
@@ -73,17 +79,17 @@ $limitVariable = "AI_$($Provider.ToUpperInvariant())_CUMULATIVE_LIMIT"
 $settings[$limitVariable] = [string]$AuthorizedCallLimit
 
 if ($AuthorizedCallLimit) {
-    $provider = @{}
+    $credentials = @{}
     foreach ($line in [IO.File]::ReadLines($providerFile)) {
-        if ($line -match '^(AI_PROVIDER|AI_BASE_URL|AI_API_KEY)=(.+)$') { $provider[$Matches[1]] = $Matches[2].Trim() }
+        if ($line -match '^(AI_PROVIDER|AI_BASE_URL|AI_API_KEY)=(.+)$') { $credentials[$Matches[1]] = $Matches[2].Trim() }
     }
-    $declaredProvider = if ($provider.AI_PROVIDER) { $provider.AI_PROVIDER } else { 'qwen' }
+    $declaredProvider = if ($credentials.AI_PROVIDER) { $credentials.AI_PROVIDER } else { 'qwen' }
     if ($declaredProvider -cne $Provider) { throw 'Set AI_PROVIDER in the private file to match the dedicated key and selected provider.' }
-    if (-not $provider.AI_API_KEY -or -not $provider.AI_BASE_URL) {
+    if (-not $credentials.AI_API_KEY -or -not $credentials.AI_BASE_URL) {
         throw 'Fill the private lab provider.env with the approved provider URL and dedicated key.'
     }
-    $settings.AI_BASE_URL = $provider.AI_BASE_URL
-    $settings.AI_API_KEY = $provider.AI_API_KEY
+    $settings.AI_BASE_URL = $credentials.AI_BASE_URL
+    $settings.AI_API_KEY = $credentials.AI_API_KEY
 }
 
 $previous = @{}
