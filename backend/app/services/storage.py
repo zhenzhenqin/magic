@@ -1,5 +1,7 @@
 import os
 import re
+import logging
+from shutil import disk_usage
 from datetime import timedelta
 from hashlib import file_digest
 from pathlib import Path
@@ -16,11 +18,48 @@ from app.core.exceptions import ApiError
 from app.models import User
 from app.models.ai import AiJob, AiJobMedia
 from app.models.diary import MealMedia, MediaAsset
+from app.models.sharing import MediaWriteReservation
 from app.models.stickers import MediaDerivative, StickerJob
 
 FILE_KEY = re.compile(r"(?:originals|thumbnails|staging|stickers)/[0-9a-f]{32}(?:-(?:original|thumbnail|sticker|sticker-thumb|cutout))?\.webp")
 SUPPORTED = ("JPEG", "PNG", "WEBP")
 MEDIA_MISSING = "图片不存在或不可访问。"
+LOGGER = logging.getLogger(__name__)
+
+
+def reserve_media_bytes(sessions, settings, size: int, temporary: Path | None = None):
+    """Reserve staging capacity across API processes and the independent worker."""
+    settings.media_root.mkdir(parents=True, exist_ok=True)
+    root_free = disk_usage(settings.media_root).free
+    with sessions.begin() as db:
+        # Retain the original upload behavior for databases used before migration.
+        has_ledger = inspect(db.connection()).has_table(MediaWriteReservation.__tablename__)
+        outstanding = 0
+        now = utcnow()
+        if has_ledger:
+            # A write statement serializes reservation checks on SQLite before reading the free space.
+            db.execute(delete(MediaWriteReservation).where(MediaWriteReservation.expires_at <= now))
+            outstanding = db.scalar(select(func.coalesce(func.sum(MediaWriteReservation.size_bytes), 0)))
+            root_free = disk_usage(settings.media_root).free
+        if temporary is not None:
+            root_free = min(root_free, disk_usage(temporary).free)
+        if root_free < settings.sticker_min_free_bytes + outstanding + size:
+            raise ApiError(507, "disk_low", "图片空间暂时不足，请稍后再试。")
+        if has_ledger:
+            identifier = str(uuid4())
+            db.add(MediaWriteReservation(id=identifier, size_bytes=size, expires_at=now + timedelta(minutes=10)))
+            return identifier
+    return None
+
+
+def release_media_bytes(sessions, reservation):
+    if reservation is None:
+        return
+    try:
+        with sessions.begin() as db:
+            db.execute(delete(MediaWriteReservation).where(MediaWriteReservation.id == reservation))
+    except Exception:
+        LOGGER.warning("Media staging reservation could not be released; expiry will reclaim it.")
 
 
 def lock_owner(db: Session, owner: str):

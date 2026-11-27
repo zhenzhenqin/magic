@@ -12,7 +12,10 @@ const fakeAi = process.env.FOODDIARY_BROWSER_FAKE_AI === '1'
 const phase41 = process.env.FOODDIARY_BROWSER_PHASE41 === '1'
 const offline = process.env.FOODDIARY_BROWSER_AI_OFFLINE === '1'
 const stickers = process.env.FOODDIARY_BROWSER_STICKERS === '1'
-const suite = stickers ? 'phase-5-stickers' : phase41 ? 'phase-4.1-ai' : fakeAi ? 'phase-4-ai' : 'phase-2-api'
+const sharing = process.env.FOODDIARY_BROWSER_SHARING === '1'
+const realStickers = sharing && process.env.FOODDIARY_BROWSER_SHARING_REAL === '1'
+const suite = sharing ? (realStickers ? 'phase-6-sharing-onnx' : 'phase-6-sharing')
+  : stickers ? 'phase-5-stickers' : phase41 ? 'phase-4.1-ai' : fakeAi ? 'phase-4-ai' : 'phase-2-api'
 const flags = [fakeAi && '--fake-ai', phase41 && '--phase-41', offline && '--no-ai-worker', stickers && '--fake-stickers'].filter(Boolean).join(' ')
 
 export default defineConfig({
@@ -31,7 +34,7 @@ export default defineConfig({
     trace: 'off',
     screenshot: 'off',
   },
-  webServer: [
+  webServer: realStickers ? undefined : [
     {
       command: '"' + python + '" -m tests.browser_server ' + backendPort + ' ' + frontendPort + ' ' + flags,
       cwd: backend,

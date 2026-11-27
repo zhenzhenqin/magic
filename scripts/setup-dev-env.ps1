@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Check', 'Install', 'Dev', 'Typecheck', 'Build', 'Test', 'Screenshots', 'TestApi', 'ScreenshotsApi', 'ScreenshotsDiary', 'TestAi', 'ScreenshotsAi', 'TestAiRecovery', 'TestAiOffline', 'TestStickers')]
+    [ValidateSet('Check', 'Install', 'Dev', 'Typecheck', 'Build', 'Test', 'Screenshots', 'TestApi', 'ScreenshotsApi', 'ScreenshotsDiary', 'TestAi', 'ScreenshotsAi', 'TestAiRecovery', 'TestAiOffline', 'TestStickers', 'TestSharing', 'ScreenshotsSharing')]
     [string]$Action = 'Dev',
     [string]$DevEnvRoot = 'D:\DevEnv',
     [int]$Port = 5173,
@@ -31,7 +31,9 @@ $settings = @{
     FOODDIARY_BROWSER_FAKE_AI = if ($Action -in 'TestAi', 'ScreenshotsAi', 'TestAiRecovery', 'TestAiOffline') { '1' } else { '0' }
     FOODDIARY_BROWSER_PHASE41 = if ($Action -in 'TestAiRecovery', 'TestAiOffline') { '1' } else { '0' }
     FOODDIARY_BROWSER_AI_OFFLINE = if ($Action -eq 'TestAiOffline') { '1' } else { '0' }
-    FOODDIARY_BROWSER_STICKERS = if ($Action -eq 'TestStickers') { '1' } else { '0' }
+    FOODDIARY_BROWSER_STICKERS = if ($Action -in 'TestStickers','TestSharing') { '1' } else { '0' }
+    FOODDIARY_BROWSER_SHARING = if ($Action -in 'TestSharing','ScreenshotsSharing') { '1' } else { '0' }
+    FOODDIARY_BROWSER_SHARING_REAL = if ($Action -eq 'ScreenshotsSharing') { '1' } else { '0' }
     VITE_APP_MODE = $buildMode.ToLowerInvariant()
 }
 
@@ -77,7 +79,9 @@ try {
         'Build' { & pnpm build }
         'Test' { & pnpm test }
         'Screenshots' { & pnpm screenshots }
-        'TestApi' { & pnpm exec playwright test --config playwright.api.config.ts --grep-invert '@screenshots|@fake-ai|@stickers' }
+        'TestApi' { & pnpm exec playwright test --config playwright.api.config.ts --grep-invert '@screenshots|@fake-ai|@stickers|@sharing' }
+        'TestSharing' { & pnpm exec playwright test --config playwright.api.config.ts sharing.api.spec.ts }
+        'ScreenshotsSharing' { & pnpm exec playwright test --config playwright.api.config.ts sharing.api.spec.ts }
         'TestStickers' { & pnpm exec playwright test --config playwright.api.config.ts stickers.api.spec.ts }
         'ScreenshotsApi' { & pnpm exec playwright test --config playwright.api.config.ts auth.api.spec.ts --grep '@screenshots' --reporter=list }
         'ScreenshotsDiary' { & pnpm exec playwright test --config playwright.api.config.ts meal.api.spec.ts --grep '@screenshots' --reporter=list }

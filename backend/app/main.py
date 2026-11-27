@@ -8,7 +8,7 @@ from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException
 
 from app.api.v1 import router
-from app.api import ai, catalog, diary, media, stickers
+from app.api import ai, catalog, diary, friends, media, stickers
 from app.core.config import Settings
 from app.core.database import build_engine
 from app.core.exceptions import ApiError, api_error, http_error, problem, unexpected_error, validation_error
@@ -34,7 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             engine.dispose()
 
-    app = FastAPI(title="FoodDiary API", version="0.5.0", debug=False, lifespan=lifespan)
+    app = FastAPI(title="FoodDiary API", version="0.6.0", debug=False, lifespan=lifespan)
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -44,7 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware, allow_origins=settings.app_origins, allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "X-FoodDiary-Intent", "Idempotency-Key"],
     )
     app.add_exception_handler(ApiError, api_error)
@@ -66,4 +66,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ai.router, prefix="/api/v1")
     app.include_router(stickers.router, prefix="/api/v1")
     app.include_router(catalog.router, prefix="/api/v1")
+    app.include_router(friends.router, prefix="/api/v1")
     return app

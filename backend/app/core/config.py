@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     image_thumbnail_edge: int = Field(default=400, ge=32, le=800)
     image_process_slots: int = Field(default=1, ge=1, le=2)
     media_upload_attempts: int = Field(default=30, ge=1, le=500)
+    friend_lookup_attempts: int = Field(default=12, ge=1, le=100)
+    friend_request_attempts: int = Field(default=6, ge=1, le=60)
     media_user_bytes: int = Field(default=209_715_200, ge=1)
     media_user_files: int = Field(default=1000, ge=1)
     media_orphan_seconds: int = Field(default=86_400, ge=60)

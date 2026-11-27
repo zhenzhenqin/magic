@@ -13,6 +13,7 @@ from app.models import AuthSession, User, UserSettings
 from app.models.ai import AiCallBudget, AiJob, AiJobMedia, AiRetryRequest, AiUsageLog, AiWorkerHeartbeat
 from app.models.catalog import CatalogLink, CatalogName, FoodCatalog
 from app.models.diary import Meal, MealItem, MealMedia, MealRequest, MediaAsset
+from app.models.sharing import FriendRequest, Friendship, MediaWriteReservation, ShareAudit, SharePermission
 from app.models.stickers import MediaDerivative, StickerJob, StickerRuntime
 from app.schemas import AuthResponse, Login, ProfilePatch, Registration, SettingsPatch, SystemStatus, UserPreferences, UserProfile
 from app.services import auth
@@ -56,7 +57,8 @@ def ready(db: Database) -> SystemStatus:
         db.execute(text("SELECT 1"))
         for model in (User, UserSettings, AuthSession, Meal, MealItem, MealMedia, MealRequest, MediaAsset,
                       AiJob, AiJobMedia, AiRetryRequest, AiUsageLog, AiCallBudget, AiWorkerHeartbeat,
-                      MediaDerivative, StickerJob, StickerRuntime, FoodCatalog, CatalogName, CatalogLink):
+                      MediaDerivative, StickerJob, StickerRuntime, FoodCatalog, CatalogName, CatalogLink,
+                      FriendRequest, Friendship, SharePermission, ShareAudit, MediaWriteReservation):
             db.execute(select(model.__table__).limit(0))
     except SQLAlchemyError:
         raise ApiError(503, "database_unavailable", "数据库暂时不可用。") from None

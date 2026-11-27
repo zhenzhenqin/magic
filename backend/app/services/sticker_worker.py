@@ -1,7 +1,6 @@
 import io
 import logging
 import multiprocessing
-import shutil
 from dataclasses import dataclass
 from datetime import timedelta
 from hashlib import sha256
@@ -12,13 +11,14 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.sqlite import insert
 
 from app.core.database import utcnow
+from app.core.exceptions import ApiError
 from app.models.diary import MediaAsset
 from app.models.stickers import MediaDerivative, StickerJob, StickerRuntime
 from app.services.sticker_image import (
     FakeBackgroundRemovalProvider, OnnxBackgroundRemovalProvider, PROCESSING_VERSION, StickerImageError, encode, make_sticker,
 )
 from app.services.stickers import MAX_ATTEMPTS, configuration, derivative, model_directory
-from app.services.storage import LocalStorageProvider, lock_owner, storage_usage
+from app.services.storage import LocalStorageProvider, lock_owner, release_media_bytes, reserve_media_bytes, storage_usage
 
 LOGGER = logging.getLogger(__name__)
 
@@ -179,13 +179,16 @@ class StickerWorker:
         temp = tuple(f"staging/{stem}-{kind}.webp" for kind in kinds)
         keys = tuple(f"stickers/{stem}-{kind}.webp" for kind in kinds)
         old_keys = ()
+        reservation = None
         try:
             if output:
                 dimensions, *files = output
                 size = sum(map(len, files))
                 root = self.storage.root
-                if shutil.disk_usage(root).free < size + self.settings.sticker_min_free_bytes:
-                    raise StickerImageError("disk_low")
+                try:
+                    reservation = reserve_media_bytes(self.sessions, self.settings, size)
+                except ApiError:
+                    raise StickerImageError("disk_low") from None
                 (root / "staging").mkdir(parents=True, exist_ok=True)
                 for key, content in zip(temp, files, strict=True):
                     self.storage.path(key).write_bytes(content)
@@ -232,6 +235,7 @@ class StickerWorker:
             raise
         finally:
             self.storage.discard(*temp)
+            release_media_bytes(self.sessions, reservation)
 
     def run_once(self):
         claim = self.claim()

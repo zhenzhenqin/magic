@@ -1,8 +1,12 @@
+import asyncio
+from pathlib import Path
+from tempfile import gettempdir
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse
+from anyio import CancelScope
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException
@@ -11,13 +15,14 @@ from starlette.formparsers import MultiPartException
 from app.core.exceptions import ApiError, ProblemResponse
 from app.dependencies import CurrentUser, Database
 from app.diary_schemas import MediaView
-from app.services.storage import MEDIA_MISSING, owned_media
+from app.services.storage import MEDIA_MISSING, owned_media, release_media_bytes, reserve_media_bytes
 from app.services.stickers import derivative
 
 router = APIRouter(prefix="/media", tags=["私有图片"], responses={
     401: {"model": ProblemResponse}, 404: {"model": ProblemResponse}, 413: {"model": ProblemResponse},
 })
 LIMIT_EXCEEDED = "fooddiary_upload_limit"
+UPLOAD_TIMEOUT = "fooddiary_upload_timeout"
 UPLOAD_FORM = {
     "requestBody": {"required": True, "content": {"multipart/form-data": {
         "schema": {"type": "object", "required": ["file"], "properties": {"file": {"type": "string", "format": "binary"}}}
@@ -31,10 +36,16 @@ def bounded_request(request: Request, limit: int):
     if length and length.isdecimal() and int(length) > limit:
         raise ApiError(413, "image_size", "上传请求超过大小限制。")
     total = 0
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 120
 
     async def receive():
         nonlocal total
-        message = await request.receive()
+        try:
+            async with asyncio.timeout_at(deadline):
+                message = await request.receive()
+        except TimeoutError:
+            raise MultiPartException(UPLOAD_TIMEOUT) from None
         total += len(message.get("body", b""))
         if total > limit:
             # Starlette closes partially spooled uploads on multipart errors.
@@ -53,6 +64,11 @@ async def upload(request: Request, user: CurrentUser, db: Database) -> MediaView
     if request.headers.get("content-type", "").split(";")[0].strip().lower() != "multipart/form-data":
         raise ApiError(415, "upload_format", "请使用图片上传表单。")
     capped = bounded_request(request, settings.image_upload_bytes + 128 * 1024)
+    sessions = request.app.state.session_factory
+    # Budget both the multipart spool and worst-case normalized/original and thumbnail staging.
+    staging = 4 * (settings.image_max_edge ** 2 + settings.image_thumbnail_edge ** 2) + 4 * 1024 ** 2
+    reservation = await run_in_threadpool(reserve_media_bytes, sessions, settings,
+                                          settings.image_upload_bytes + 128 * 1024 + staging, Path(gettempdir()))
     try:
         async with capped.form(max_files=1, max_fields=0, max_part_size=64 * 1024) as form:
             image = form.get("file")
@@ -66,7 +82,12 @@ async def upload(request: Request, user: CurrentUser, db: Database) -> MediaView
     except HTTPException as error:
         if error.detail == LIMIT_EXCEEDED:
             raise ApiError(413, "image_size", "上传请求超过大小限制。") from None
+        if error.detail == UPLOAD_TIMEOUT:
+            raise ApiError(408, "upload_timeout", "上传超时，请重试。") from None
         raise ApiError(400, "invalid_upload", "图片上传表单无效。") from None
+    finally:
+        with CancelScope(shield=True):
+            await run_in_threadpool(release_media_bytes, sessions, reservation)
 
 
 def image_response(request: Request, db: Database, user: CurrentUser, media_id: UUID, thumb: bool):

@@ -1,28 +1,15 @@
 from datetime import date
-import re
-import unicodedata
 from uuid import uuid4
 
 from sqlalchemy import delete, func, select, update
 
 from app.core.database import utcnow
 from app.core.exceptions import ApiError
+from app.food_names import ALIASES, canonical
 from app.models.catalog import CatalogLink, CatalogName, FoodCatalog
 from app.models.diary import Meal, MealItem, MealMedia
 from app.models.stickers import MediaDerivative
 from app.services.storage import lock_owner
-
-ALIASES = {
-    "牛角包": "可颂", "羊角面包": "可颂", "牛角面包": "可颂", "原味可颂": "可颂",
-    "可颂(牛角面包)": "可颂", "可颂(牛角包)": "可颂", "可颂牛角面包": "可颂",
-    "西红柿炒鸡蛋": "番茄炒蛋", "番茄炒鸡蛋": "番茄炒蛋",
-}
-
-
-def canonical(value: str) -> str:
-    key = re.sub(r"\s+", "", unicodedata.normalize("NFKC", value).casefold())
-    return ALIASES.get(key, key)[:80]
-
 
 def sync_item(db, user_id: str, item_id: str, food_name: str, category: str | None):
     key = canonical(food_name)

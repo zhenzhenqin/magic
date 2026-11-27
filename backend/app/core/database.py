@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from hashlib import sha256
 
 from sqlalchemy import DateTime, create_engine, event
 from sqlalchemy.engine import URL
@@ -43,6 +44,12 @@ def build_engine(url: URL):
     if url.get_backend_name() == "sqlite":
         @event.listens_for(engine, "connect")
         def configure_sqlite(connection, _):
+            # The shared catalog groups only the names inside an authorized SQL scope.
+            from app.food_names import canonical
+
+            connection.create_function("fooddiary_name", 1, canonical, deterministic=True)
+            connection.create_function("fooddiary_catalog_id", 1, lambda name: sha256(name.encode()).hexdigest()[:32],
+                                       deterministic=True)
             cursor = connection.cursor()
             try:
                 cursor.execute("PRAGMA foreign_keys=ON")

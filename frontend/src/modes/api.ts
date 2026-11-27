@@ -6,6 +6,8 @@ export { Root }
 
 const empty = () => import('../pages/ApiEmptyPage.vue')
 const authPage = () => import('../pages/AuthPage.vue')
+const friendBook = () => import('../pages/ApiFriendBookPage.vue')
+const friendPath = '/friends/:friendId(fd_[a-f0-9]{32})'
 export const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: authPage },
   { path: '/register', name: 'register', component: authPage },
@@ -14,8 +16,13 @@ export const routes: RouteRecordRaw[] = [
   { path: '/calendar', name: 'calendar', meta: { requiresAuth: true }, component: () => import('../pages/ApiCalendarPage.vue') },
   { path: '/catalog', name: 'catalog', meta: { requiresAuth: true }, component: () => import('../pages/ApiCatalogPage.vue') },
   { path: '/capture', name: 'capture', meta: { requiresAuth: true }, component: () => import('../pages/ApiMealForm.vue') },
+  { path: '/friends', name: 'friends', meta: { requiresAuth: true }, component: () => import('../pages/ApiFriendsPage.vue') },
+  { path: friendPath + '/sharing', name: 'friend-sharing', meta: { requiresAuth: true }, component: () => import('../pages/ApiSharingPage.vue') },
+  { path: friendPath + '/diary', name: 'friend-diary', meta: { requiresAuth: true }, component: friendBook },
+  { path: friendPath + '/calendar', name: 'friend-calendar', meta: { requiresAuth: true }, component: friendBook },
+  { path: friendPath + '/catalog', name: 'friend-catalog', meta: { requiresAuth: true }, component: friendBook },
+  { path: friendPath + '/together', name: 'friend-together', meta: { requiresAuth: true }, component: friendBook },
   ...[
-    ['/friends', 'friends', '饭搭子'],
     ['/friends/:pathMatch(.*)*', 'friend-pages', '饭搭子'],
     ['/me/stats', 'stats', '饮食统计'],
   ].map(([path, name, title]) => ({ path, name, meta: { title, requiresAuth: true }, component: empty })),
