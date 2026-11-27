@@ -25,6 +25,8 @@
 
 启动及每批提交前从原账本按供应商重新汇总浏览器和命令行的历史调用，校验累计次数、Token、地域端点和适用档位。下一次调用使用模型完整上下文与配置输出上限计算保守上界。用量未知、状态未结清、明细缺失或价格无法对应时暂停。本地估算用于控制联调，供应商账单仍以其计量、适用费用和结算规则为准。
 
+预算较低时，DeepSeek 的首次单图浏览器测试可同时使用 `-FirstBrowserCall -CompactDeepSeekRequest -AuthorizedCallLimit 1`。该模式限制序列化请求为 64 KiB、最多 1024 个输出 Token，并在发送前拒绝超限输入。使用公开 CNY 高峰价时，单次本地保守预留为 CNY 0.174080。该模式使用原账本的绝对累计上限，已有一次已发送调用的账本会停止启动。 [实际联调](../PHASE-4.2.md)
+
 ```powershell
 # 本地 Fake Worker 测试命令示例
 .\.venv\Scripts\python.exe -m tests.ai_benchmark --run-local fake --username benchmark_reader --database D:\DevEnv\tmp\benchmark-test.db --cases same-plate not-food --output D:\DevEnv\tmp\bench-fake.csv

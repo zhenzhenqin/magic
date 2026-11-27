@@ -1,3 +1,7 @@
-# Phase 4.2 本地预检查截图
+# Phase 4.2 浏览器联调截图
 
-[AI 关闭时手动录入](00-local-preflight-ai-disabled.jpg)来自运行中的隔离环境。图片为 FoodDiary 已有的原创生成样例，画面只包含录入区域。没有真实或模拟模型输出。真实模型流程截图待授权联调后补充。
+- [AI 关闭时手动录入](00-local-preflight-ai-disabled.jpg)记录此前的免费预检查。
+- [DeepSeek 真实识别](01-real-deepseek-croissant-result.jpg)显示模型结果「可颂（牛角面包）」及估算提示。
+- [保存后刷新](02-real-deepseek-croissant-saved.jpg)显示更名后的「原味可颂」及人工修正标记。
+
+两张真实联调截图来自同一次 `deepseek-flash` 调用，使用原创生成样图和本地测试账号。

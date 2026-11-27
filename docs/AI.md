@@ -59,10 +59,10 @@ Phase 4.2 新任务还绑定规范化端点摘要，包含 Provider、模型及�
 
 ## 实际模型测试
 
-截至本轮适配交付，真实调用为 0。模型账号权限、耗时、识别质量、用量和费用仍待实测。MockTransport 验证 Qwen 和 DeepSeek 的请求与响应处理，浏览器 Fake Provider 仅用于流程验证。
+阶段 4.2 已用 DeepSeek 真实识别一张可颂生成样图，并验证人工修正、保存、刷新及账号隔离。本次调用耗时 2.617 秒，输入 519 Token，输出 92 Token。MockTransport 与浏览器 Fake Provider 用于免费回归。 [实测与截图](PHASE-4.2.md)
 
 授权后使用 10～15 张原创或可合法使用的无隐私食物照片。覆盖家常菜、主食、水果、饮料、甜点、包装食品、模糊和非食物照片，以及同一道菜的两种角度。先验证首选模型，再在同一预算内决定是否对比候选模型。按任务记录实际模型与地区、耗时、漏识别和重复识别、结构校验、营养估算合理性、Token 和实际可得账单。营养值只能与称重、配方等基准对照验证准确率。
 
 Phase 4.1 已准备 12 张图片及 11 个用例。首轮只测试 `qwen3-vl-flash`，建议最多批准 12 次可能收费的尝试、USD 1 测试预算。百炼国际站文档列出按账号、工作空间或 Key 的月预算及到限停服，亦列出停服延迟和适用范围。需以所用账号控制台可用设置及实际账单为准。 [样例、脚本和空表](ai-benchmark/README.md) · [百炼预算管理](https://www.alibabacloud.com/help/en/model-studio/budget-management)
 
-Phase 4.2 改用 `deepseek-flash`，在 `D:/DevEnv/fooddiary-phase42` 复用原持久化账本并保留 Qwen 历史记录。浏览器首例和后续命令行批次共用 DeepSeek 次数及预算，自动重试关闭。失败、未知用量、未知估算或异常状态会暂停后续提交。 [Phase 4.2 联调说明](PHASE-4.2.md)
+Phase 4.2 改用 `deepseek-flash`，在 `D:/DevEnv/fooddiary-phase42` 复用原持久化账本并保留 Qwen 历史记录。浏览器首例和后续命令行批次共用 DeepSeek 次数及预算，自动重试关闭。低预算首例可由脚本启用受限单图模式，发送前校验序列化请求最多 64 KiB，输出最多 1024 Token。失败、未知用量、未知估算或异常状态会暂停后续提交。 [Phase 4.2 联调说明](PHASE-4.2.md)
