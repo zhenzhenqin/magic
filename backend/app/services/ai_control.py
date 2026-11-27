@@ -4,6 +4,7 @@ from hashlib import sha256
 from sqlalchemy import select, update
 from sqlalchemy.dialects.sqlite import insert
 
+from app.core.config import REAL_AI_PROVIDERS
 from app.models.ai import AiCallBudget, AiWorkerHeartbeat
 
 HEARTBEAT_INTERVAL = 3
@@ -31,20 +32,20 @@ def mark_heartbeat(db, settings, now):
 
 
 def cumulative_exhausted(db, settings) -> bool:
-    if settings.ai_provider != "qwen":
+    if settings.ai_provider not in REAL_AI_PROVIDERS:
         return False
-    spent = db.scalar(select(AiCallBudget.spent).where(AiCallBudget.provider == "qwen"))
-    return spent is None or spent >= settings.ai_qwen_cumulative_limit
+    spent = db.scalar(select(AiCallBudget.spent).where(AiCallBudget.provider == settings.ai_provider))
+    return spent is None or spent >= settings.ai_cumulative_limit
 
 
-def reserve_qwen_call(db, settings) -> bool:
+def reserve_real_call(db, settings) -> bool:
     result = db.execute(update(AiCallBudget).where(
-        AiCallBudget.provider == "qwen", AiCallBudget.spent < settings.ai_qwen_cumulative_limit,
+        AiCallBudget.provider == settings.ai_provider, AiCallBudget.spent < settings.ai_cumulative_limit,
     ).values(spent=AiCallBudget.spent + 1))
     return result.rowcount == 1
 
 
-def refund_qwen_call(db):
+def refund_real_call(db, provider):
     db.execute(update(AiCallBudget).where(
-        AiCallBudget.provider == "qwen", AiCallBudget.spent > 0,
+        AiCallBudget.provider == provider, AiCallBudget.spent > 0,
     ).values(spent=AiCallBudget.spent - 1))

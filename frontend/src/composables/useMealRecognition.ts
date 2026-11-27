@@ -16,6 +16,7 @@ const failureMessages: Record<string, string> = {
   ai_rate_limited: '第三方服务暂时限流，仍可手动记录。',
   ai_invalid_result: '这次识别结果无法使用，你仍可以手动记录。',
   ai_provider_auth: '识别服务暂不可用，你仍可以手动记录。',
+  ai_provider_balance: '识别服务用量不足，你仍可以手动记录。',
   ai_configuration_changed: '识别服务配置已变更，请重新选择照片。',
   ai_images_expired: '识别照片已失效，请重新选择照片。',
   ai_image_invalid: '识别照片无法读取，请重新选择照片。',
@@ -112,11 +113,12 @@ export function useMealRecognition(photos: () => DraftPhoto[], formId: () => str
     picked.value = photos().slice(0, maxImages.value).map(photo => photo.key)
   }, { immediate: true, flush: 'sync' })
   watch(maxImages, max => { if (picked.value.length > max) picked.value = picked.value.slice(0, max) })
-  watch(capabilities, (value, _, cleanup) => {
+  watch(capabilities, (value, previous, cleanup) => {
+    if (value?.consent_version !== previous?.consent_version) dialog.value = undefined
     if (!value?.available || value.worker_online) return
     const timer = window.setTimeout(() => cap.reload(), 4000)
     cleanup(() => window.clearTimeout(timer))
-  })
+  }, { flush: 'sync' })
   function reconnect() {
     recovery.reload()
     if (!waiting.value) cap.reload()

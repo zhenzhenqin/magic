@@ -111,7 +111,8 @@ def test_batch_records_failure_then_stops_before_next_paid_case(env):
             self.submissions = 0
 
         def send(self, method, path):
-            data = {"available": True, "worker_online": True, "simulated": False, "consent_version": "sample"}
+            data = {"available": True, "worker_online": True, "simulated": False,
+                    "provider": "qwen", "consent_version": "sample"}
             return SimpleNamespace(raise_for_status=lambda: None, json=lambda: data)
 
         def create_job(self, photos, consent):
@@ -124,7 +125,7 @@ def test_batch_records_failure_then_stops_before_next_paid_case(env):
 
     api = FixtureAPI()
     args = SimpleNamespace(run_local="qwen", region="cn-beijing", approved_budget=Decimal(1))
-    budget = SimpleNamespace(ledger_estimate=lambda _: SimpleNamespace(amount=Decimal(0)),
+    budget = SimpleNamespace(provider="qwen", ledger_estimate=lambda _: SimpleNamespace(amount=Decimal(0)),
                              require_next=lambda *_: None, approved_amount=Decimal(1))
     rows = list(run_cases(api, Ledger(), cases, args, budget, cumulative_limit=3))
     assert api.submissions == 1 and len(rows) == 1

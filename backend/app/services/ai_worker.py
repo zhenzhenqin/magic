@@ -12,11 +12,11 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import OperationalError
 
 from app.ai_schemas import Candidate, RecognitionView
-from app.core.config import Settings
+from app.core.config import REAL_AI_PROVIDERS, Settings
 from app.core.database import utcnow
 from app.models.ai import AiJob, AiJobMedia, AiUsageLog
 from app.models.diary import MediaAsset
-from app.services.ai_control import HEARTBEAT_INTERVAL, mark_heartbeat, refund_qwen_call, reserve_qwen_call
+from app.services.ai_control import HEARTBEAT_INTERVAL, mark_heartbeat, refund_real_call, reserve_real_call
 from app.services.ai_jobs import configuration_matches, end_job, matching_photos, retry_later, usage
 from app.services.ai_provider import Analysis, FoodRecognitionProvider, ProviderError, prepare_photo
 from app.services.storage import LocalStorageProvider
@@ -200,7 +200,7 @@ class AiWorker:
                 code = "ai_expired"
             elif not quota.available:
                 code = quota.exhausted_reason or "ai_unavailable"
-            elif job.provider == "qwen" and not reserve_qwen_call(db, self.settings):
+            elif job.provider in REAL_AI_PROVIDERS and not reserve_real_call(db, self.settings):
                 code = "ai_cumulative_limit"
             if code:
                 attempt.status, attempt.error_code = "not_sent", code
@@ -234,8 +234,8 @@ class AiWorker:
                     end_job(job, "succeeded", now)
             else:
                 attempt.error_code = outcome.code
-                if not outcome.sent and attempt.status == "dispatching" and attempt.provider == "qwen":
-                    refund_qwen_call(db)
+                if not outcome.sent and attempt.status == "dispatching" and attempt.provider in REAL_AI_PROVIDERS:
+                    refund_real_call(db, attempt.provider)
                 attempt.status = (
                     "not_sent" if not outcome.sent else "unknown" if outcome.code == "ai_result_unknown" else "failed"
                 )

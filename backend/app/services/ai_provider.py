@@ -12,7 +12,7 @@ from PIL import Image
 from pydantic import ValidationError
 
 from app.ai_schemas import Recognition
-from app.core.config import Settings, validate_qwen_base_url
+from app.core.config import DEEPSEEK_VISION_MODEL, AiProvider, Settings, validate_ai_base_url
 from app.services.ai_prompt import SYSTEM_PROMPT
 
 MAX_IMAGE_BYTES = 640 * 1024
@@ -75,17 +75,22 @@ def unique_object(pairs):
     return result
 
 
-class QwenVisionProvider:
+class CompatibleVisionProvider:
+    provider: AiProvider
+    thinking_options: dict
+
     def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None):
         self.settings = settings
         self.transport = transport
 
     async def analyze(self, images: list[bytes]) -> Analysis:
         settings = self.settings
-        if not settings.ai_available or settings.ai_provider != "qwen" or not settings.ai_api_key:
+        if not settings.ai_available or settings.ai_provider != self.provider or not settings.ai_api_key:
             raise ProviderError("ai_unavailable", sent=False)
+        if self.provider == "deepseek" and settings.ai_model != DEEPSEEK_VISION_MODEL:
+            raise ProviderError("ai_configuration_changed", sent=False)
         try:
-            endpoint = validate_qwen_base_url(settings.ai_base_url)
+            endpoint = validate_ai_base_url(self.provider, settings.ai_base_url)
         except ValueError:
             raise ProviderError("ai_configuration_changed", sent=False) from None
         content = [
@@ -94,7 +99,7 @@ class QwenVisionProvider:
         ]
         content.append({"type": "text", "text": "联合分析所选照片，返回食物记录 JSON。"})
         body = {
-            "model": settings.ai_model, "stream": False, "enable_thinking": False,
+            "model": settings.ai_model, "stream": False, **self.thinking_options,
             "max_tokens": settings.ai_max_output_tokens, "response_format": {"type": "json_object"},
             "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": content}],
         }
@@ -118,6 +123,8 @@ class QwenVisionProvider:
                         raise ProviderError("ai_rate_limited", retryable=True, retry_after=wait, usage=usage)
                     if code in (401, 403):
                         raise ProviderError("ai_provider_auth", usage=usage)
+                    if code == 402:
+                        raise ProviderError("ai_provider_balance", usage=usage)
                     if code == 408 or code >= 500:
                         raise ProviderError("ai_result_unknown", usage=usage)
                     if code != 200:
@@ -134,6 +141,8 @@ class QwenVisionProvider:
         try:
             envelope = json.loads(raw, object_pairs_hook=unique_object)
             counts = envelope.get("usage") or {}
+            if not isinstance(counts, dict):
+                counts = {}
             upstream = request_id(envelope.get("id")) or ""
             usage = Usage(token_count(counts.get("prompt_tokens")), token_count(counts.get("completion_tokens")),
                           usage.request_id or (upstream if upstream and secret not in upstream else None))
@@ -147,6 +156,16 @@ class QwenVisionProvider:
             return Analysis(validated, usage)
         except (ValidationError, ValueError, KeyError, IndexError, TypeError, AttributeError, RecursionError):
             raise ProviderError("ai_invalid_result", usage=usage) from None
+
+
+class QwenVisionProvider(CompatibleVisionProvider):
+    provider = "qwen"
+    thinking_options = {"enable_thinking": False}
+
+
+class DeepSeekVisionProvider(CompatibleVisionProvider):
+    provider = "deepseek"
+    thinking_options = {"thinking": {"type": "disabled"}}
 
 
 class FakeVisionProvider:
@@ -168,4 +187,5 @@ def build_provider(settings: Settings) -> FoodRecognitionProvider:
         raise ProviderError("ai_unavailable", sent=False)
     if settings.ai_provider == "fake" and settings.app_env != "production":
         return FakeVisionProvider()
-    return QwenVisionProvider(settings)
+    provider = DeepSeekVisionProvider if settings.ai_provider == "deepseek" else QwenVisionProvider
+    return provider(settings)

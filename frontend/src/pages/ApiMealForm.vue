@@ -339,7 +339,7 @@ function keepAsManual() {
     <ModalSurface :open="!!dialog" :title="dialog === 'retry' ? '再试一次识别' : '用照片识别食物'" @close="dialog = undefined">
       <p v-if="capabilities?.simulated">本地模拟会使用示例结果，所选照片将留在本地测试环境。</p>
       <template v-else>
-        <p>所选食物照片将发送至阿里云百炼，用于识别食物及估算营养。建议选择只包含食物的照片。</p>
+        <p>所选食物照片将发送至{{ capabilities?.provider === 'deepseek' ? ' DeepSeek 服务' : '阿里云百炼' }}，用于识别食物及估算营养。建议选择只包含食物的照片。</p>
         <p class="caption">取消识别后，已经发送的请求可能仍会完成。</p>
         <a v-if="capabilities?.privacy_url" class="text-action" :href="capabilities.privacy_url"
           target="_blank" rel="noopener noreferrer">查看服务商的隐私说明</a>

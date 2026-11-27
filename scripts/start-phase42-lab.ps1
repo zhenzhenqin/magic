@@ -2,6 +2,8 @@ param(
     [switch]$PrepareOnly,
     [ValidateRange(0, 1000)]
     [int]$AuthorizedCallLimit = 0,
+    [ValidateSet('deepseek', 'qwen')]
+    [string]$Provider = 'deepseek',
     [string[]]$BudgetOptions,
     [switch]$FirstBrowserCall,
     [string[]]$BenchmarkOptions
@@ -42,7 +44,7 @@ if ($firstSetup) {
 }
 
 if ($PrepareOnly -and -not (Test-Path -LiteralPath $providerFile)) {
-    [IO.File]::WriteAllText($providerFile, "AI_BASE_URL=`r`nAI_API_KEY=`r`n")
+    [IO.File]::WriteAllText($providerFile, "AI_PROVIDER=deepseek`r`nAI_BASE_URL=https://api.deepseek.com`r`nAI_API_KEY=`r`n")
 }
 
 $frontendPort = 15176
@@ -54,11 +56,12 @@ $settings = @{
     JWT_SECRET = [IO.File]::ReadAllText($jwtFile)
     APP_ORIGINS = '["http://127.0.0.1:15176"]'
     AI_ENABLED = if ($AuthorizedCallLimit) { 'true' } else { 'false' }
-    AI_PROVIDER = 'qwen'
-    AI_MODEL = 'qwen3-vl-flash'
+    AI_PROVIDER = $Provider
+    AI_MODEL = if ($Provider -eq 'deepseek') { 'deepseek-flash' } else { 'qwen3-vl-flash' }
     AI_USER_DAILY_LIMIT = [string][Math]::Max(1, $AuthorizedCallLimit)
     AI_GLOBAL_DAILY_LIMIT = [string][Math]::Max(1, $AuthorizedCallLimit)
-    AI_QWEN_CUMULATIVE_LIMIT = [string]$AuthorizedCallLimit
+    AI_QWEN_CUMULATIVE_LIMIT = '0'
+    AI_DEEPSEEK_CUMULATIVE_LIMIT = '0'
     AI_MAX_CONCURRENT_JOBS = '1'
     AI_MAX_ATTEMPTS = '1'
     AI_MAX_OUTPUT_TOKENS = '1024'
@@ -66,14 +69,18 @@ $settings = @{
     TMP = 'D:\DevEnv\tmp'
     TMPDIR = 'D:\DevEnv\tmp'
 }
+$limitVariable = "AI_$($Provider.ToUpperInvariant())_CUMULATIVE_LIMIT"
+$settings[$limitVariable] = [string]$AuthorizedCallLimit
 
 if ($AuthorizedCallLimit) {
     $provider = @{}
     foreach ($line in [IO.File]::ReadLines($providerFile)) {
-        if ($line -match '^(AI_BASE_URL|AI_API_KEY)=(.+)$') { $provider[$Matches[1]] = $Matches[2].Trim() }
+        if ($line -match '^(AI_PROVIDER|AI_BASE_URL|AI_API_KEY)=(.+)$') { $provider[$Matches[1]] = $Matches[2].Trim() }
     }
+    $declaredProvider = if ($provider.AI_PROVIDER) { $provider.AI_PROVIDER } else { 'qwen' }
+    if ($declaredProvider -cne $Provider) { throw 'Set AI_PROVIDER in the private file to match the dedicated key and selected provider.' }
     if (-not $provider.AI_API_KEY -or -not $provider.AI_BASE_URL) {
-        throw 'Fill the private lab provider.env with the approved workspace URL and key.'
+        throw 'Fill the private lab provider.env with the approved provider URL and dedicated key.'
     }
     $settings.AI_BASE_URL = $provider.AI_BASE_URL
     $settings.AI_API_KEY = $provider.AI_API_KEY
@@ -88,7 +95,7 @@ try {
     if ($BenchmarkOptions) {
         Push-Location (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend')
         try {
-            & .\.venv\Scripts\python.exe -m tests.ai_benchmark @BenchmarkOptions @BudgetOptions --authorized-attempts $AuthorizedCallLimit --run-local qwen --base-url "http://127.0.0.1:$frontendPort" --database $db
+            & .\.venv\Scripts\python.exe -m tests.ai_benchmark @BenchmarkOptions @BudgetOptions --authorized-attempts $AuthorizedCallLimit --run-local $Provider --base-url "http://127.0.0.1:$frontendPort" --database $db
             if ($LASTEXITCODE -ne 0) { throw "Benchmark paused or failed (exit $LASTEXITCODE). Consult the private report." }
         } finally {
             Pop-Location
@@ -106,7 +113,7 @@ try {
                 $budget = $budget | ConvertFrom-Json
                 $safeLimit = $budget.safe_call_limit
                 if ($FirstBrowserCall) { $safeLimit = [Math]::Min($safeLimit, $budget.spent_attempts + 1) }
-                $env:AI_QWEN_CUMULATIVE_LIMIT = [string]$safeLimit
+                [Environment]::SetEnvironmentVariable($limitVariable, [string]$safeLimit, 'Process')
                 "Local ledger cap=$safeLimit; recorded attempts=$($budget.spent_attempts); estimated spend=$($budget.estimate_total) $($budget.currency)."
             } finally {
                 Pop-Location

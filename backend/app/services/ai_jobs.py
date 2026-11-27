@@ -7,13 +7,13 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.ai_schemas import AiCapabilities, JobCreate, JobRetry, JobView, UsageView
-from app.core.config import Settings
+from app.core.config import REAL_AI_PROVIDERS, Settings
 from app.core.database import utcnow
 from app.core.exceptions import ApiError
 from app.models.ai import AiJob, AiJobMedia, AiRetryRequest, AiUsageLog
 from app.models.diary import Meal, MediaAsset
 from app.services.ai_control import cumulative_exhausted, processing_identity, worker_online
-from app.services.ai_prompt import CONSENT_VERSION, PRIVACY_URL, PROMPT_VERSION
+from app.services.ai_prompt import PROMPT_VERSION, disclosure
 from app.services.storage import MEDIA_MISSING, lock_owner
 
 ACTIVE = ("pending", "running")
@@ -21,9 +21,9 @@ RETRYABLE = {"ai_before_send", "ai_rate_limited", "ai_invalid_result", "ai_resul
 
 
 def capabilities(db: Session, settings: Settings) -> AiCapabilities:
-    return AiCapabilities(available=settings.ai_available, simulated=settings.ai_provider == "fake",
-                          max_images=settings.ai_max_images, consent_version=CONSENT_VERSION,
-                          privacy_url=PRIVACY_URL if settings.ai_provider == "qwen" else None,
+    version, privacy = disclosure(settings.ai_provider)
+    return AiCapabilities(provider=settings.ai_provider, available=settings.ai_available, simulated=settings.ai_provider == "fake",
+                          max_images=settings.ai_max_images, consent_version=version, privacy_url=privacy,
                           worker_online=worker_online(db, settings, utcnow()))
 
 
@@ -36,7 +36,7 @@ def owned_job(db: Session, owner: str, job_id: str) -> AiJob:
 
 def configuration_matches(settings: Settings, job: AiJob) -> bool:
     return (settings.ai_available and job.provider == settings.ai_provider and job.model == settings.ai_model_name
-            and job.prompt_version == PROMPT_VERSION and job.consent_version == CONSENT_VERSION
+            and job.prompt_version == PROMPT_VERSION and job.consent_version == disclosure(settings.ai_provider)[0]
             and job.processing_fingerprint == processing_identity(settings))
 
 
@@ -104,9 +104,10 @@ def view_job(db: Session, job: AiJob, settings: Settings) -> JobView:
 
 def usage(db: Session, settings: Settings, owner: str, now, *, exclude: str = "") -> UsageView:
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    providers = REAL_AI_PROVIDERS if settings.ai_provider in REAL_AI_PROVIDERS else (settings.ai_provider,)
     total, user_total = db.execute(select(
         func.count(), func.count().filter(AiUsageLog.user_id == owner),
-    ).where(AiUsageLog.created_at >= start, AiUsageLog.provider == settings.ai_provider,
+    ).where(AiUsageLog.created_at >= start, AiUsageLog.provider.in_(providers),
             AiUsageLog.status != "not_sent", AiUsageLog.id != exclude)).one()
     reason = None
     if cumulative_exhausted(db, settings):
@@ -126,7 +127,7 @@ def quota_error(reason: str | None):
 def require_consent(settings: Settings, version: str):
     if not settings.ai_available:
         raise ApiError(503, "ai_unavailable", "AI 识别暂不可用，你仍可以手动记录。")
-    if version != CONSENT_VERSION:
+    if version != disclosure(settings.ai_provider)[0]:
         raise ApiError(409, "ai_consent_required", "请重新查看照片处理说明并确认。")
 
 
@@ -164,7 +165,7 @@ def create_job(db: Session, settings: Settings, owner: str, key: str, data: JobC
     require_slot(db, settings, owner, now)
     job = AiJob(id=str(uuid4()), user_id=owner, request_key=key, fingerprint=digest,
                 provider=settings.ai_provider, model=settings.ai_model_name, prompt_version=PROMPT_VERSION,
-                consent_version=CONSENT_VERSION, processing_fingerprint=processing_identity(settings),
+                consent_version=data.consent_version, processing_fingerprint=processing_identity(settings),
                 max_attempts=settings.ai_max_attempts,
                 form_meal_id=form_meal_id, media_snapshot=ids,
                 available_at=now, expires_at=now + timedelta(seconds=settings.ai_job_ttl_seconds),

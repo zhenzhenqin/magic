@@ -18,7 +18,7 @@ import httpx
 from PIL import Image
 
 from app.ai_schemas import RecognitionView
-from app.core.config import BACKEND_DIR, Settings
+from app.core.config import BACKEND_DIR, DEEPSEEK_VISION_MODEL, REAL_AI_PROVIDERS, Settings
 from app.services.ai_control import processing_identity
 from tests.benchmark_budget import BudgetPause, LiveBudget, PriceTier
 
@@ -168,13 +168,15 @@ def run_cases(api, connection, cases, args, budget=None, cumulative_limit=0):
     cap = response.json()
     if not (cap["available"] and cap["worker_online"]) or cap["simulated"] != (args.run_local == "fake"):
         raise RuntimeError("Expected a ready local Worker with the selected provider")
+    if args.run_local in REAL_AI_PROVIDERS and (budget is None or cap.get("provider") != budget.provider):
+        raise RuntimeError("Expected the selected provider and its verified budget")
     for case in cases:
         row = initial_row(case) | {"region": args.region or "offline-fixture"}
         response = api.send("GET", "/ai/usage")
         response.raise_for_status()
         if not response.json()["available"]:
             row["failure_retry_reasons"] = response.json()["exhausted_reason"]
-            if args.run_local == "qwen":
+            if budget:
                 row["pause_reason"] = "额度已耗尽或不可用"
             yield row
             break
@@ -206,7 +208,7 @@ def run_cases(api, connection, cases, args, budget=None, cumulative_limit=0):
                 response.raise_for_status()
                 job = response.json()
         except (RuntimeError, httpx.HTTPError):
-            if args.run_local != "qwen":
+            if not budget:
                 raise
             row.update(result_status="unknown", end_to_end_ms=round((time.monotonic() - now) * 1000),
                        pause_reason="任务状态未确认，核对原任务及账本后才能继续")
@@ -240,7 +242,7 @@ def price_tier(value):
 
 def options():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-local", choices=["fake", "qwen"], help="Default validates images without network calls")
+    parser.add_argument("--run-local", choices=["fake", *REAL_AI_PROVIDERS], help="Default validates images without network calls")
     parser.add_argument("--check-budget", action="store_true", help="Read the existing ledger and calculate a safe local launch limit")
     parser.add_argument("--base-url", default="http://127.0.0.1:15175", help="Local Vite proxy origin")
     parser.add_argument("--database", type=Path, help="SQLite file used by the local API")
@@ -286,26 +288,29 @@ def main():
         parser.error("Use the isolated FoodDiary SQLite file on D:")
     budget = None
     cumulative_limit = 0
-    if args.run_local == "qwen" or args.check_budget:
+    if args.run_local in REAL_AI_PROVIDERS or args.check_budget:
         settings = Settings()
         host = httpx.URL(settings.ai_base_url).host
+        provider = settings.ai_provider if args.check_budget else args.run_local
         public_regions = {"dashscope.aliyuncs.com": "cn-beijing", "dashscope-intl.aliyuncs.com": "ap-southeast-1",
-                          "cn-hongkong.dashscope.aliyuncs.com": "cn-hongkong"}
+                          "cn-hongkong.dashscope.aliyuncs.com": "cn-hongkong", "api.deepseek.com": "official"}
         region = public_regions.get(host) or (host.split(".")[1] if host.endswith(".maas.aliyuncs.com") else None)
+        models = {"qwen": "qwen3-vl-flash", "deepseek": DEEPSEEK_VISION_MODEL}
         if ((not args.check_budget and (not args.cases or len(cases) > 8))
                 or not args.region or args.region != region or args.approved_budget is None
                 or not args.approved_budget.is_finite() or args.approved_budget <= 0
                 or not args.authorized_attempts or args.authorized_attempts <= 0
                 or not args.currency or not args.price_reference or not args.price_tier
-                or settings.ai_provider != "qwen" or not settings.ai_available or settings.ai_model != "qwen3-vl-flash"
+                or provider not in REAL_AI_PROVIDERS or settings.ai_provider != provider
+                or not settings.ai_available or settings.ai_model != models.get(provider)
                 or settings.ai_max_attempts != 1 or Path(settings.db_url.database).resolve() != database
-                or not 0 < settings.ai_qwen_cumulative_limit <= args.authorized_attempts):
+                or not 0 < settings.ai_cumulative_limit <= args.authorized_attempts):
             parser.error("Real execution needs verified regional tiers, approved limits and matching Flash settings with one attempt per job")
-        cumulative_limit = settings.ai_qwen_cumulative_limit
+        cumulative_limit = settings.ai_cumulative_limit
         try:
             budget = LiveBudget(args.authorized_attempts, args.approved_budget, args.currency, args.price_reference,
                                 tuple(sorted(args.price_tier, key=lambda tier: tier.max_input)),
-                                processing_identity(settings), settings.ai_model, settings.ai_max_output_tokens)
+                                processing_identity(settings), settings.ai_model, settings.ai_max_output_tokens, provider)
         except BudgetPause as error:
             parser.error(str(error))
     with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as ledger:

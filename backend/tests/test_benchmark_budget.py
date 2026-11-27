@@ -13,16 +13,22 @@ from sqlalchemy import delete, update
 from app.core.database import utcnow
 from app.models.ai import AiJob, AiUsageLog
 from app.services.ai_control import processing_identity
+from app.services.ai_prompt import disclosure
 from app.services.ai_provider import Analysis, FakeVisionProvider, Usage
 from tests import ai_benchmark
 from tests.ai_benchmark import run_cases
 from tests.benchmark_budget import BudgetPause, LiveBudget, PriceTier
 from tests.test_ai_jobs import env, new_job, photo, worker
+from tests.test_deepseek import deepseek_settings
 from tests.test_identity import bearer, signed_in
 from tests.test_phase41 import qwen_settings
 
 
 def plan(settings, amount=".17", attempts=5):
+    if settings.ai_provider == "deepseek":
+        return LiveBudget(attempts, Decimal(amount), "USD", "fixture peak rates",
+                          (PriceTier.parse("1048576:.3:1.2"),), processing_identity(settings),
+                          settings.ai_model, 1024, "deepseek")
     return LiveBudget(attempts, Decimal(amount), "CNY", "fixture rates", tuple(map(PriceTier.parse, (
         "32768:.15:1.5", "131072:.3:3", "262144:.6:6",
     ))), processing_identity(settings), settings.ai_model, 1024)
@@ -37,7 +43,8 @@ def open_ledger(app):
 def record_call(env, username, input_tokens, output_tokens):
     app, client = env
     auth = bearer(signed_in(client, username))
-    response = new_job(client, auth, [photo(client, auth)])
+    consent = disclosure(app.state.settings.ai_provider)[0]
+    response = new_job(client, auth, [photo(client, auth)], consent_version=consent)
     assert response.status_code == 202
 
     class Offline(FakeVisionProvider):
@@ -75,7 +82,7 @@ def test_browser_and_batch_amount_share_the_ledger_across_script_restarts(env):
         class NoNewPaidWork:
             def send(self, method, path):
                 assert method == "GET"
-                facts = {"available": True, "worker_online": True, "simulated": False}
+                facts = {"available": True, "worker_online": True, "simulated": False, "provider": "qwen"}
                 return SimpleNamespace(raise_for_status=lambda: None, json=lambda: facts)
 
             def create_job(self, *_):
@@ -140,3 +147,24 @@ def test_browser_launch_budget_check_uses_read_only_ledger_without_http(env, mon
         "spent_attempts": 1, "estimate_total": "0.00525", "next_call_upper_bound": "0.1634304",
         "safe_call_limit": 2, "currency": "CNY",
     }
+
+
+def test_deepseek_budget_carries_both_batches_without_repricing_qwen(env):
+    app, _ = env
+    settings = qwen_settings(app, 5)
+    record_call(env, "qwen_account", 50_000, 500)
+    deepseek_settings(app, 5)
+    record_call(env, "deepseek_browser", 30_000, 500)
+    with open_ledger(app) as ledger:
+        pricing = plan(settings, ".34")
+        previous = pricing.ledger_estimate(ledger)
+        assert previous.attempts == 1 and previous.amount == Decimal(".0096")
+        assert pricing.next_call_upper_bound == Decimal(".3158016")
+        assert pricing.safe_launch_limit(previous, 5) == 2
+    record_call(env, "deepseek_followup", 60_000, 1000)
+    with open_ledger(app) as ledger:
+        pricing = plan(settings, ".34")
+        total = pricing.ledger_estimate(ledger)
+        assert total.attempts == 2 and total.amount == Decimal(".0288")
+        with pytest.raises(BudgetPause, match="保守上界"):
+            pricing.require_next(total, 5)

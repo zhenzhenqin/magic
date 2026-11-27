@@ -114,6 +114,35 @@ test('@fake-ai 选择部分图片、授权、双击只创建一次、修改候�
   await expect(page.getByRole('heading', { name: '饮食月历' })).toBeVisible()
 })
 
+test('@fake-ai DeepSeek 独立披露并在确认后发送对应授权版本', async ({ page }) => {
+  const privacyUrl = 'https://cdn.deepseek.com/policies/zh-CN/deepseek-open-platform-privacy-policy.html'
+  await signIn(page, 'ai_deepseek_privacy')
+  await page.route('**/api/v1/ai/capabilities', async route => {
+    const response = await route.fetch()
+    await route.fulfill({ response, json: {
+      ...await response.json(), provider: 'deepseek', simulated: false,
+      consent_version: 'vision-deepseek-v1', privacy_url: privacyUrl,
+    } })
+  })
+  const consents: string[] = []
+  await page.route('**/api/v1/ai/jobs', async route => {
+    consents.push(route.request().postDataJSON().consent_version)
+    await route.fulfill({ status: 503, json: { detail: { code: 'ai_unavailable' } } })
+  })
+  await openForm(page, [tomato])
+  await start(page).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('所选食物照片将发送至 DeepSeek 服务', { exact: false })).toBeVisible()
+  await expect(dialog.getByRole('link', { name: '查看服务商的隐私说明' })).toHaveAttribute('href', privacyUrl)
+  await dialog.getByRole('button', { name: '先手动记录' }).click()
+  expect(consents).toEqual([])
+  await start(page).click()
+  const response = page.waitForResponse(value => value.url().endsWith('/ai/jobs') && value.status() === 503)
+  await confirm(page).click()
+  await response
+  expect(consents).toEqual(['vision-deepseek-v1'])
+})
+
 test('@fake-ai 等待期间填写的人工内容保留并可追加', async ({ page }) => {
   await signIn(page, 'ai_manual_keep')
   await openForm(page)
@@ -280,7 +309,7 @@ test('@fake-ai @screenshots 百炼隐私说明通过受控能力响应检查，�
   await page.route('**/api/v1/ai/capabilities', async route => {
     const response = await route.fetch()
     await route.fulfill({ response, json: {
-      ...await response.json(), simulated: false,
+      ...await response.json(), provider: 'qwen', simulated: false,
       privacy_url: 'https://www.alibabacloud.com/help/en/model-studio/privacy-notice',
     } })
   })

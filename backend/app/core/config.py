@@ -3,11 +3,15 @@ import re
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+AiProvider = Literal["qwen", "deepseek", "fake"]
+REAL_AI_PROVIDERS = ("qwen", "deepseek")
+DEEPSEEK_ENDPOINT = "https://api.deepseek.com"
+DEEPSEEK_VISION_MODEL = "deepseek-flash"
 QWEN_REGIONS = "cn-beijing|ap-southeast-1|cn-hongkong|us-east-1|ap-northeast-1|eu-central-1"
 QWEN_ENDPOINT = re.compile(
     r"https://(?:dashscope(?:-intl)?\.aliyuncs\.com|cn-hongkong\.dashscope\.aliyuncs\.com|"
@@ -20,6 +24,14 @@ def validate_qwen_base_url(value: str) -> str:
     if value and not QWEN_ENDPOINT.fullmatch(value):
         raise ValueError("Provide a documented HTTPS Model Studio regional or workspace endpoint")
     return value.rstrip("/")
+
+
+def validate_ai_base_url(provider: AiProvider, value: str) -> str:
+    if provider == "deepseek":
+        if value not in ("", DEEPSEEK_ENDPOINT, DEEPSEEK_ENDPOINT + "/"):
+            raise ValueError("DeepSeek requires the official HTTPS API origin")
+        return value.rstrip("/")
+    return validate_qwen_base_url(value)
 
 
 class Settings(BaseSettings):
@@ -53,7 +65,7 @@ class Settings(BaseSettings):
     media_user_files: int = Field(default=1000, ge=1)
     media_orphan_seconds: int = Field(default=86_400, ge=60)
     ai_enabled: bool = False
-    ai_provider: Literal["qwen", "fake"] = "qwen"
+    ai_provider: AiProvider = "qwen"
     ai_base_url: str = ""
     ai_api_key: SecretStr | None = None
     ai_model: str = Field(default="", max_length=100)
@@ -65,6 +77,7 @@ class Settings(BaseSettings):
     ai_user_daily_limit: int = Field(default=10, ge=1, le=1000)
     ai_global_daily_limit: int = Field(default=30, ge=1, le=10000)
     ai_qwen_cumulative_limit: int = Field(default=0, ge=0, le=1_000_000)
+    ai_deepseek_cumulative_limit: int = Field(default=0, ge=0, le=1_000_000)
     ai_max_attempts: int = Field(default=3, ge=1, le=5)
     ai_job_retention_seconds: int = Field(default=604_800, ge=86_400, le=2_592_000)
     ai_usage_retention_seconds: int = Field(default=2_592_000, ge=86_400, le=7_776_000)
@@ -72,8 +85,8 @@ class Settings(BaseSettings):
 
     @field_validator("ai_base_url")
     @classmethod
-    def valid_ai_url(cls, value: str) -> str:
-        return validate_qwen_base_url(value)
+    def valid_ai_url(cls, value: str, info: ValidationInfo) -> str:
+        return validate_ai_base_url(info.data.get("ai_provider", "qwen"), value)
 
     @field_validator("app_origins")
     @classmethod
@@ -97,6 +110,8 @@ class Settings(BaseSettings):
             raise ValueError("Production browser origins require HTTPS")
         if self.app_env == "production" and self.ai_provider == "fake":
             raise ValueError("Production prohibits the fake AI provider")
+        if self.ai_provider == "deepseek" and self.ai_model not in ("", DEEPSEEK_VISION_MODEL):
+            raise ValueError("DeepSeek food recognition requires deepseek-flash")
         if self.ai_enabled and (self.db_url.get_backend_name() != "sqlite" or self.db_url.database in (None, "", ":memory:")):
             raise ValueError("AI jobs require a shared SQLite file")
         return self
@@ -110,6 +125,11 @@ class Settings(BaseSettings):
     @property
     def ai_model_name(self) -> str:
         return self.ai_model or ("local-fixture" if self.ai_provider == "fake" else "")
+
+    @property
+    def ai_cumulative_limit(self) -> int:
+        limits = {"qwen": self.ai_qwen_cumulative_limit, "deepseek": self.ai_deepseek_cumulative_limit}
+        return limits.get(self.ai_provider, 0)
 
     @property
     def secure_cookie(self) -> bool:

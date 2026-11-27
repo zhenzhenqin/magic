@@ -20,6 +20,7 @@ export interface AiJob {
 }
 
 interface Capabilities {
+  provider: 'qwen' | 'deepseek' | 'fake'
   available: boolean
   simulated: boolean
   max_images: number

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import Field, StrictBool, StringConstraints, field_serializer, field_validator, model_validator
 
+from app.core.config import AiProvider
 from app.diary_schemas import Food
 from app.schemas import Input
 
@@ -116,6 +117,7 @@ class JobView(Input):
 
 
 class AiCapabilities(Input):
+    provider: AiProvider
     available: bool
     simulated: bool
     max_images: int

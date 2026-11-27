@@ -25,9 +25,9 @@ API 模式提供真实账户、个人手账、饮食月历、每日摘要及私�
 
 在对应地域的阿里云百炼工作空间创建 API Key。在仓库根目录的忽略文件 `.env` 或后端进程环境设置 `AI_ENABLED=true`、`AI_PROVIDER=qwen`、`AI_BASE_URL`、`AI_API_KEY` 和 `AI_MODEL=qwen3-vl-flash`。Base URL 使用工作空间的 OpenAI 兼容地址，结尾为 `/compatible-mode/v1`。若新建 `.env`，同时使用现有开发 `JWT_SECRET`，或为独立开发库生成新的高熵密钥。启动前确认 `APP_ORIGINS` 对应实际端口。[百炼 API Key 指引](https://www.alibabacloud.com/help/en/model-studio/get-api-key)
 
-真实请求默认被累计上限 `AI_QWEN_CUMULATIVE_LIMIT=0` 禁止。获得用户批准后，在独立联调库写入明确的累计尝试上限。浏览器能在同账号下恢复上次任务，Worker 离线时可继续手动记录。[联调素材和脚本](docs/ai-benchmark/README.md)
+Qwen 与 DeepSeek 的累计调用上限默认均为 0。获得用户批准后，基于独立联调库的现有账本设置对应供应商的绝对累计上限。浏览器能在同账号下恢复上次任务，Worker 离线时可继续手动记录。 [联调素材和脚本](docs/ai-benchmark/README.md)
 
-阶段 4.2 使用独立联调目录 `D:/DevEnv/fooddiary-phase42`。在仓库根运行 `.\scripts\start-phase42-lab.ps1 -PrepareOnly` 可准备环境，直接运行脚本会以真实调用关闭的状态启动。真实联调只需在该目录的私有 `provider.env` 填入 `AI_BASE_URL` 和 `AI_API_KEY`，并明确授权次数和费用后再启动专用 Worker。 [联调及授权说明](docs/PHASE-4.2.md)
+阶段 4.2 使用独立联调目录 `D:/DevEnv/fooddiary-phase42`。在仓库根运行 `.\scripts\start-phase42-lab.ps1 -PrepareOnly` 可准备环境，直接运行会关闭真实调用。DeepSeek 联调在私有 `provider.env` 中配置 `AI_PROVIDER=deepseek`、`AI_BASE_URL=https://api.deepseek.com` 和专用 `AI_API_KEY`，获得明确的次数和费用授权后可启动真实 Worker。 [联调及授权说明](docs/PHASE-4.2.md)
 
 ```powershell
 .\scripts\setup-backend.ps1 -Action Migrate

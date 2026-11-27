@@ -1,4 +1,4 @@
-"""Local Phase 4.2 budget estimates based on the retained Qwen ledger."""
+"""Local Phase 4.2 budget estimates based on the retained provider ledger."""
 
 from dataclasses import dataclass
 from decimal import Decimal
@@ -6,6 +6,7 @@ from sqlite3 import Connection
 
 FLASH_INPUT_LIMIT = 262_144  # Use the entire published context as an upper bound for input.
 FLASH_TIERS = (32_768, 131_072, FLASH_INPUT_LIMIT)
+DEEPSEEK_FLASH_TIERS = (1_048_576,)  # Round DeepSeek's published 1M context up for the local bound.
 
 
 class BudgetPause(ValueError):
@@ -46,10 +47,12 @@ class LiveBudget:
     endpoint_fingerprint: str
     model: str
     max_output: int
+    provider: str = "qwen"
 
     def __post_init__(self):
-        if tuple(tier.max_input for tier in self.tiers) != FLASH_TIERS:
-            raise BudgetPause("Qwen3-VL-Flash 的地区价目必须覆盖 32K、128K 和 256K 三档")
+        limits = {"qwen": FLASH_TIERS, "deepseek": DEEPSEEK_FLASH_TIERS}
+        if tuple(tier.max_input for tier in self.tiers) != limits.get(self.provider):
+            raise BudgetPause("价目必须覆盖所选供应商的完整模型输入范围")
 
     @property
     def next_call_upper_bound(self) -> Decimal:
@@ -66,18 +69,19 @@ class LiveBudget:
         raise BudgetPause("历史调用超出现有价格档位，先核对适用价目")
 
     def ledger_estimate(self, ledger: Connection) -> LedgerEstimate:
-        # A single SQLite read snapshot includes all Qwen jobs, regardless of account, client, or UTC date.
+        # One read snapshot includes all usage for the selected provider across accounts, clients and dates.
         rows = ledger.execute("""
             SELECT b.spent, u.id AS attempt_id, u.model, u.status, u.usage_known,
                    u.input_tokens, u.output_tokens, j.processing_fingerprint,
-                   EXISTS(SELECT 1 FROM ai_jobs WHERE provider = 'qwen' AND status IN ('pending', 'running')) AS active
+                   EXISTS(SELECT 1 FROM ai_jobs WHERE provider IN ('qwen', 'deepseek')
+                          AND status IN ('pending', 'running')) AS active
             FROM ai_call_budgets b
             LEFT JOIN ai_usage_logs u ON u.provider = b.provider AND u.status != 'not_sent'
             LEFT JOIN ai_jobs j ON j.id = u.job_id
-            WHERE b.provider = 'qwen'
-        """).fetchall()
+            WHERE b.provider = ?
+        """, (self.provider,)).fetchall()
         if not rows:
-            raise BudgetPause("原联调账本缺少 Qwen 累计记录")
+            raise BudgetPause("原联调账本缺少所选供应商的累计记录")
         if rows[0]["active"] or any(row["status"] in ("reserved", "dispatching", "unknown") for row in rows):
             raise BudgetPause("仍有未结清的调用或任务，先核对发送状态")
         attempts = [row for row in rows if row["attempt_id"] is not None]

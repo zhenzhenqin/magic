@@ -1,6 +1,15 @@
 PROMPT_VERSION = "food-zh-v1"
 CONSENT_VERSION = "vision-privacy-v1"
 PRIVACY_URL = "https://www.alibabacloud.com/help/en/model-studio/privacy-notice"
+DEEPSEEK_CONSENT_VERSION = "vision-deepseek-v1"
+DEEPSEEK_PRIVACY_URL = "https://cdn.deepseek.com/policies/zh-CN/deepseek-open-platform-privacy-policy.html"
+
+
+def disclosure(provider: str) -> tuple[str, str | None]:
+    if provider == "deepseek":
+        return DEEPSEEK_CONSENT_VERSION, DEEPSEEK_PRIVACY_URL
+    return CONSENT_VERSION, PRIVACY_URL if provider == "qwen" else None
+
 
 SYSTEM_PROMPT = """你是辅助美食手账记录的视觉识别助手。只分析实际可见的食物，
 使用常见中文名称，尽量识别具体菜品。多张照片可能是同一份食物的不同角度，
