@@ -2,7 +2,7 @@
 
 FoodDiary 是一款计划同时提供 Web 和 Android APK 的私人 AI 美食手账。用户可以拍照记录饮食，确认 AI 的识别结果，生成美食贴纸，并经授权与亲友互看记录。视觉采用原创组件和素材，以温馨、简洁的手账为方向。
 
-API 模式提供真实账户、个人手账、饮食月历、每日摘要及私有照片。启用百炼后可授权识别所选照片，修改候选再保存。Demo 模式保留阶段 1 的图鉴、模拟识别和共享体验，继续使用独立浏览器存储。
+API 模式提供真实账户、个人手账、饮食月历、每日摘要、私有照片和好友共享。启用受支持的模型后可授权识别所选照片，修改候选再保存。Demo 模式保留阶段 1 的模拟体验，继续使用独立浏览器存储。
 
 ## 本地启动
 
@@ -30,6 +30,10 @@ API 模式提供真实账户、个人手账、饮食月历、每日摘要及私�
 ```
 
 阶段 5 的真实模式使用黑白纸质手账、食物剪贴和个人图鉴。贴纸 Worker 和模型缓存位于 D 盘。普通启动支持原图记录，外部 AI Worker 可单独启用。 [贴纸使用说明](docs/STICKERS.md) · [图鉴规则](docs/CATALOG.md) · [阶段报告](docs/PHASE-5.md)
+
+### 饭搭子与双人手账
+
+在「饭搭子」复制自己的公开 ID，或填写好友的完整 ID 并发送申请。好友接受后，双方可以各自保存向对方授出的权限。可以单独开放原照片、贴纸或图鉴。进入「双人手账」可按日期和四种餐次查看自己与好友已共享的内容。 [权限及日期范围](docs/SHARING.md) · [阶段 6 报告](docs/PHASE-6.md)
 
 ### 开启食物识别
 
@@ -65,6 +69,7 @@ Demo 只启动前端。正式构建默认 API 模式，通过 `-Mode Demo` 可�
 .\scripts\setup-dev-env.ps1 -Action TestAi -Port 15173 -BackendPort 18020
 .\scripts\setup-dev-env.ps1 -Action TestAiRecovery -Port 15173 -BackendPort 18020
 .\scripts\setup-dev-env.ps1 -Action TestAiOffline -Port 15173 -BackendPort 18020
+.\scripts\setup-dev-env.ps1 -Action TestSharing -Port 15173 -BackendPort 18020
 .\scripts\setup-dev-env.ps1 -Action ScreenshotsDiary -Port 15173 -BackendPort 18020
 .\scripts\setup-dev-env.ps1 -Action ScreenshotsAi -Port 15173 -BackendPort 18020
 ```

@@ -1,5 +1,17 @@
 # FoodDiary 数据库
 
+`0008_friend_sharing` 在阶段 5 后新增五张表。原有饮食、图片、识别账本和图鉴保留原表结构及已有行。
+
+| 表 | 约束与用途 |
+| --- | --- |
+| `friend_requests` | 用户顺序归一，每对仅一条当前或最近申请。收件、发件及过期查询有索引 |
+| `friendships` | 每个规范化用户对只有一个有效关系。解除后旧关系 ID 随记录删除 |
+| `share_permissions` | 主键为关系 ID 与所有者，包含查看者、权限位、固定边界、授予时间和修改版本。删除好友关系会级联撤销两条方向的授权 |
+| `share_audit` | 保存操作者、相关账号、时间和事件。写入时删除 90 天前的记录，并限制当事人最近 100 条。账号删除会级联清理 |
+| `media_write_reservations` | 原照片和贴纸写入暂存空间共用的短期预留。保存字节数及带索引的到期时间 |
+
+授权、申请及解除在 SQLite 短写事务中处理。已有用餐归属和日期索引用于共享范围，SQLite 确定函数提供共享图鉴名称分组及稳定的分组标识。 [权限与历史](SHARING.md)
+
 阶段 5 的 `0007_stickers_catalog` 增加 `sticker_jobs`、`sticker_runtime`、`media_derivatives`、`food_catalog`、`catalog_names` 与 `catalog_links`。迁移用原有 `meal_items` 回填图鉴，保留现有明细 ID 和识别来源。用户与媒体使用复合外键，派生文件及任务随原图行删除。 [图鉴数据规则](CATALOG.md)
 
 开发使用 SQLite 和同步 SQLAlchemy 2.x。默认 `DATABASE_URL=sqlite:///data/fooddiary.db` 的相对路径从 `backend/` 解析，实际开发文件为 `D:/桌面/mjc/fooddiary/backend/data/fooddiary.db`。每个 SQLite 连接启用外键约束，文件库使用 WAL，忙等待上限 5 秒。

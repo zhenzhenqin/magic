@@ -80,3 +80,24 @@
 `GET /api/v1/stickers/capabilities` 返回配置、Worker 可用性及模拟标记。`POST /api/v1/stickers/jobs` 接受 `media_id`，可选 `crop`，返回持久任务。`GET /stickers/sources/{media_id}` 或 `GET /stickers/jobs/{id}` 查询状态。`POST /stickers/jobs/{id}/retry` 和 `POST /stickers/jobs/{id}/cancel` 重新生成或取消。原图 ID 下的 `/media/{id}/sticker`、`/sticker/thumbnail`、`/sticker/cutout` 返回经过授权的 WebP。
 
 `GET /api/v1/catalog` 支持 `page`、`limit`、`category`、`search`、`favorites` 和 `sort`。`GET /catalog/{id}` 取详情，`/catalog/{id}/history` 分页取历史，`PATCH /catalog/{id}` 修改显示偏好，`POST /catalog/merge` 事务合并。除首个前缀示例，以上路径均相对于 `/api/v1`。
+
+## 阶段 6 饭搭子与共享
+
+以下相对路径继续使用 `/api/v1` 和 Bearer 会话。`{peer}` 为格式 `fd_` 加 32 位十六进制数字的公开 ID。
+
+| 方法和路径 | 请求及响应 |
+| --- | --- |
+| `GET /friends` | 自己的公开 ID 与好友清单，包含双向独立授权 |
+| `GET /friends/lookup?public_id=…` | 精确匹配，返回公开 ID 及昵称 |
+| `GET /friends/requests`、`POST /friends/requests` | 查看双向申请或用 `public_id` 发起 |
+| `POST /friends/requests/{id}/{accept\|reject\|cancel}` | 接受、拒绝或取消申请，校验操作者角色 |
+| `DELETE /friends/{peer}?relationship_id=…` | 解除该关系并撤销双向授权，已不存在时返回 204 |
+| `GET /friends/{peer}/sharing` | 读取自己的 `outgoing` 及对方的 `incoming` |
+| `PUT /friends/{peer}/sharing` | 提交 `relationship_id`、`version`、`permissions`，可显式提供 `history_scope`。过期版本返回 409 |
+| `DELETE /friends/{peer}/sharing` | 参数 `relationship_id`、`version`，仅停止当前账号的授出方向 |
+| `GET /friends/{peer}/meals`、`/meals/{meal_id}` | 共享餐次与明细。列表参数 `date`、`page`、`limit`，单页最多 50 |
+| `GET /friends/{peer}/calendar`、`/statistics/daily` | 参数分别为 `month`、`date`。仅使用授权内记录和字段 |
+| `GET /friends/{peer}/catalog`、`/catalog/{food_id}`、`/catalog/{food_id}/history` | 列表支持 `search`、`category` 和分页，历史受独立开关控制 |
+| `GET /friends/{peer}/media/{media_id}` | 路径分别可加 `/thumbnail`、`/sticker`、`/sticker/thumbnail`。必须提供 `meal_id` 或 `catalog_id` 之一 |
+
+资源不可访问时返回 `404 shared_not_found`。响应省略未授权字段。授权的未知营养值为 JSON `null`，确认的零值保留为 0。媒体为 WebP，响应带 `Cache-Control: no-store`。上传空间不可用返回 `507 disk_low`，接收超时返回 `408 upload_timeout`。 [权限矩阵](SHARING.md)
