@@ -19,6 +19,8 @@ from PIL import Image
 
 from app.ai_schemas import RecognitionView
 from app.core.config import BACKEND_DIR, Settings
+from app.services.ai_control import processing_identity
+from tests.benchmark_budget import BudgetPause, LiveBudget, PriceTier
 
 ROOT = BACKEND_DIR.parent
 MANIFEST = ROOT / "docs" / "ai-benchmark" / "cases.json"
@@ -126,7 +128,7 @@ def attempts(connection, job_id):
     ).fetchall()
 
 
-def record_attempts(row, records, args):
+def record_attempts(row, records, budget: LiveBudget | None):
     row["attempt_statuses"] = " / ".join(record["status"] for record in records)
     row["failure_retry_reasons"] = " / ".join(filter(None, [
         *(record["error_code"] for record in records), row.get("failure_retry_reasons"),
@@ -140,9 +142,12 @@ def record_attempts(row, records, args):
     row["usage_known"] = known
     row["input_tokens"] = " / ".join(str(record["input_tokens"]) if record["input_tokens"] is not None else "未知" for record in sent)
     row["output_tokens"] = " / ".join(str(record["output_tokens"]) if record["output_tokens"] is not None else "未知" for record in sent)
-    if known and args.input_price is not None and args.output_price is not None:
-        estimate = sum(record["input_tokens"] * args.input_price + record["output_tokens"] * args.output_price for record in sent)
-        row.update(estimate_amount=estimate / 1_000_000, estimate_currency=args.currency, price_reference=args.price_reference)
+    if known and budget:
+        try:
+            estimate = sum(budget.estimate_attempt(record) for record in sent)
+        except BudgetPause:
+            return
+        row.update(estimate_amount=estimate, estimate_currency=budget.currency, price_reference=budget.price_reference)
 
 
 def live_pause_reason(case, row, budget_reached):
@@ -157,13 +162,12 @@ def live_pause_reason(case, row, budget_reached):
     return ""
 
 
-def run_cases(api, connection, cases, args):
+def run_cases(api, connection, cases, args, budget=None, cumulative_limit=0):
     response = api.send("GET", "/ai/capabilities")
     response.raise_for_status()
     cap = response.json()
     if not (cap["available"] and cap["worker_online"]) or cap["simulated"] != (args.run_local == "fake"):
         raise RuntimeError("Expected a ready local Worker with the selected provider")
-    estimate_total = Decimal(0)
     for case in cases:
         row = initial_row(case) | {"region": args.region or "offline-fixture"}
         response = api.send("GET", "/ai/usage")
@@ -183,6 +187,15 @@ def run_cases(api, connection, cases, args):
             photo_ids.append(uploaded.json()["id"])
         now = time.monotonic()
         job = None
+        prior = None
+        if budget:
+            try:
+                prior = budget.ledger_estimate(connection)
+                budget.require_next(prior, cumulative_limit)
+            except BudgetPause as error:
+                row["pause_reason"] = str(error)
+                yield row
+                break
         try:
             job = api.create_job(photo_ids, cap["consent_version"])
             while job["status"] in ("pending", "running"):
@@ -199,7 +212,7 @@ def run_cases(api, connection, cases, args):
                        pause_reason="任务状态未确认，核对原任务及账本后才能继续")
             if job:
                 row["job_id"] = job["id"]
-                record_attempts(row, attempts(connection, job["id"]), args)
+                record_attempts(row, attempts(connection, job["id"]), budget)
             yield row
             break
         row.update(job_id=job["id"], result_status=job["status"], end_to_end_ms=round((time.monotonic() - now) * 1000),
@@ -209,18 +222,26 @@ def run_cases(api, connection, cases, args):
             names = [food.food_name for food in recognition.foods]
             row.update(result_status=recognition.status, recognized_foods="、".join(names), json_valid="是",
                        **compare(case, recognition.status, names))
-        record_attempts(row, attempts(connection, job["id"]), args)
-        if args.run_local == "qwen":
-            estimate_total += row.get("estimate_amount", 0)
-            row["pause_reason"] = live_pause_reason(case, row, estimate_total >= args.approved_budget)
+        record_attempts(row, attempts(connection, job["id"]), budget)
+        if budget:
+            estimate_total = prior.amount + row.get("estimate_amount", 0)
+            row["pause_reason"] = live_pause_reason(case, row, estimate_total >= budget.approved_amount)
         yield row
         if row.get("pause_reason"):
             break
 
 
+def price_tier(value):
+    try:
+        return PriceTier.parse(value)
+    except (ArithmeticError, ValueError) as error:
+        raise argparse.ArgumentTypeError("Expected MAX_INPUT:INPUT_PRICE:OUTPUT_PRICE per million tokens") from error
+
+
 def options():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-local", choices=["fake", "qwen"], help="Default validates images without network calls")
+    parser.add_argument("--check-budget", action="store_true", help="Read the existing ledger and calculate a safe local launch limit")
     parser.add_argument("--base-url", default="http://127.0.0.1:15175", help="Local Vite proxy origin")
     parser.add_argument("--database", type=Path, help="SQLite file used by the local API")
     parser.add_argument("--username", help="Dedicated, already registered local test account")
@@ -229,8 +250,7 @@ def options():
     parser.add_argument("--region")
     parser.add_argument("--authorized-attempts", type=int)
     parser.add_argument("--approved-budget", type=Decimal, help="Operator-confirmed amount in the selected currency")
-    parser.add_argument("--input-price", type=Decimal, help="Price per million input tokens")
-    parser.add_argument("--output-price", type=Decimal, help="Price per million output tokens")
+    parser.add_argument("--price-tier", action="append", type=price_tier, help="MAX_INPUT:INPUT_PRICE:OUTPUT_PRICE in the selected currency per million tokens")
     parser.add_argument("--currency")
     parser.add_argument("--price-reference", help="A verified regional price card and tier")
     return parser, parser.parse_args()
@@ -238,55 +258,74 @@ def options():
 
 def main():
     parser, args = options()
-    cases, image_count = dataset()
+    cases, image_count = ([], 0) if args.check_budget else dataset()
     if args.cases:
         if set(args.cases) - {case["case"] for case in cases}:
             parser.error("Unknown case")
         cases = [case for case in cases if case["case"] in args.cases]
-    if not args.run_local and not args.output:
+    if not args.run_local and not args.output and not args.check_budget:
         print(f"Validated {image_count} public fixtures; {len(cases)} selected cases. No network calls.")
         return
-    if not args.output or (os.name == "nt" and args.output.resolve().drive.upper() != "D:"):
-        parser.error("Provide a new CSV output path on D: in Windows")
-    if args.output.exists():
-        parser.error("CSV already exists")
-    if not args.run_local:
+    if not args.check_budget:
+        if not args.output or (os.name == "nt" and args.output.resolve().drive.upper() != "D:"):
+            parser.error("Provide a new CSV output path on D: in Windows")
+        if args.output.exists():
+            parser.error("CSV already exists")
+    if not args.run_local and not args.check_budget:
         with args.output.open("x", encoding="utf-8-sig", newline="") as stream:
             writer = csv.DictWriter(stream, fieldnames=FIELDS)
             writer.writeheader()
             writer.writerows(initial_row(case) for case in cases)
         return
-    if not args.username or not args.database or not re.fullmatch(r"http://127\.0\.0\.1:[0-9]{2,5}", args.base_url):
+    if not args.database or (not args.check_budget and (
+        not args.username or not re.fullmatch(r"http://127\.0\.0\.1:[0-9]{2,5}", args.base_url)
+    )):
         parser.error("A dedicated test account, read-only SQLite location and loopback origin are required")
     database = args.database.resolve(strict=True)
     if os.name == "nt" and database.drive.upper() != "D:":
         parser.error("Use the isolated FoodDiary SQLite file on D:")
-    if args.run_local == "qwen":
+    budget = None
+    cumulative_limit = 0
+    if args.run_local == "qwen" or args.check_budget:
         settings = Settings()
-        price = (args.input_price, args.output_price)
         host = httpx.URL(settings.ai_base_url).host
         public_regions = {"dashscope.aliyuncs.com": "cn-beijing", "dashscope-intl.aliyuncs.com": "ap-southeast-1",
                           "cn-hongkong.dashscope.aliyuncs.com": "cn-hongkong"}
         region = public_regions.get(host) or (host.split(".")[1] if host.endswith(".maas.aliyuncs.com") else None)
-        if (not args.cases or len(cases) > 8 or not args.region or args.region != region or args.approved_budget is None
+        if ((not args.check_budget and (not args.cases or len(cases) > 8))
+                or not args.region or args.region != region or args.approved_budget is None
                 or not args.approved_budget.is_finite() or args.approved_budget <= 0
                 or not args.authorized_attempts or args.authorized_attempts <= 0
-                or not args.currency or not args.price_reference or any(value is None or not value.is_finite() or value < 0 for value in price)
+                or not args.currency or not args.price_reference or not args.price_tier
                 or settings.ai_provider != "qwen" or not settings.ai_available or settings.ai_model != "qwen3-vl-flash"
-                or settings.ai_max_attempts != 1 or Path(settings.db_url.database).resolve() != database):
-            parser.error("Real execution needs a selected batch of up to 8 cases, approved limits and matching Flash settings with one attempt per job")
+                or settings.ai_max_attempts != 1 or Path(settings.db_url.database).resolve() != database
+                or not 0 < settings.ai_qwen_cumulative_limit <= args.authorized_attempts):
+            parser.error("Real execution needs verified regional tiers, approved limits and matching Flash settings with one attempt per job")
+        cumulative_limit = settings.ai_qwen_cumulative_limit
+        try:
+            budget = LiveBudget(args.authorized_attempts, args.approved_budget, args.currency, args.price_reference,
+                                tuple(sorted(args.price_tier, key=lambda tier: tier.max_input)),
+                                processing_identity(settings), settings.ai_model, settings.ai_max_output_tokens)
+        except BudgetPause as error:
+            parser.error(str(error))
     with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as ledger:
         ledger.row_factory = sqlite3.Row
-        if args.run_local == "qwen":
-            (spent,) = ledger.execute("SELECT spent FROM ai_call_budgets WHERE provider = 'qwen'").fetchone()
-            if not len(cases) <= settings.ai_qwen_cumulative_limit - spent <= args.authorized_attempts:
-                parser.error("Set the application's remaining cumulative slots within the confirmed attempt allowance")
+        if args.check_budget:
+            try:
+                historical = budget.ledger_estimate(ledger)
+                launch_limit = budget.safe_launch_limit(historical, cumulative_limit)
+            except BudgetPause as error:
+                parser.error(str(error))
+            print(json.dumps({"spent_attempts": historical.attempts, "estimate_total": str(historical.amount),
+                              "next_call_upper_bound": str(budget.next_call_upper_bound),
+                              "safe_call_limit": launch_limit, "currency": budget.currency}))
+            return
         with httpx.Client(base_url=args.base_url, trust_env=False, follow_redirects=False, timeout=60) as client:
             api = LocalApi(client, args.base_url, args.username)
             with args.output.open("x", encoding="utf-8-sig", newline="") as stream:
                 writer = csv.DictWriter(stream, fieldnames=FIELDS)
                 writer.writeheader()
-                for row in run_cases(api, ledger, cases, args):
+                for row in run_cases(api, ledger, cases, args, budget, cumulative_limit):
                     writer.writerow(spreadsheet_row(row))
                     stream.flush()
                     print(f"{row['case']}: {row.get('result_status') or '未执行'}")

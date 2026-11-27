@@ -124,6 +124,8 @@ def test_batch_records_failure_then_stops_before_next_paid_case(env):
 
     api = FixtureAPI()
     args = SimpleNamespace(run_local="qwen", region="cn-beijing", approved_budget=Decimal(1))
-    rows = list(run_cases(api, Ledger(), cases, args))
+    budget = SimpleNamespace(ledger_estimate=lambda _: SimpleNamespace(amount=Decimal(0)),
+                             require_next=lambda *_: None, approved_amount=Decimal(1))
+    rows = list(run_cases(api, Ledger(), cases, args, budget, cumulative_limit=3))
     assert api.submissions == 1 and len(rows) == 1
     assert rows[0]["job_id"] == identifier and rows[0]["pause_reason"]

@@ -2,6 +2,8 @@ param(
     [switch]$PrepareOnly,
     [ValidateRange(0, 1000)]
     [int]$AuthorizedCallLimit = 0,
+    [string[]]$BudgetOptions,
+    [switch]$FirstBrowserCall,
     [string[]]$BenchmarkOptions
 )
 
@@ -13,6 +15,10 @@ $providerFile = Join-Path $lab 'provider.env'
 $firstSetup = -not (Test-Path -LiteralPath $lab)
 
 if ($PrepareOnly -and $AuthorizedCallLimit) { throw 'Preparing the lab requires a zero call limit.' }
+if ($AuthorizedCallLimit -and -not $BudgetOptions) { throw 'Supply the verified price tiers, region, currency and approved amount in -BudgetOptions.' }
+if ($FirstBrowserCall -and ($PrepareOnly -or -not $AuthorizedCallLimit -or $BenchmarkOptions)) {
+    throw 'The first browser call needs an approved live launch without benchmark options.'
+}
 if ($BenchmarkOptions -and ($PrepareOnly -or -not $AuthorizedCallLimit)) {
     throw 'A live benchmark requires a previously approved, positive cumulative limit.'
 }
@@ -82,7 +88,7 @@ try {
     if ($BenchmarkOptions) {
         Push-Location (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend')
         try {
-            & .\.venv\Scripts\python.exe -m tests.ai_benchmark @BenchmarkOptions --run-local qwen --base-url "http://127.0.0.1:$frontendPort" --database $db
+            & .\.venv\Scripts\python.exe -m tests.ai_benchmark @BenchmarkOptions @BudgetOptions --authorized-attempts $AuthorizedCallLimit --run-local qwen --base-url "http://127.0.0.1:$frontendPort" --database $db
             if ($LASTEXITCODE -ne 0) { throw "Benchmark paused or failed (exit $LASTEXITCODE). Consult the private report." }
         } finally {
             Pop-Location
@@ -92,6 +98,20 @@ try {
         "Phase 4.2 lab prepared with real calls disabled at $lab"
     } else {
         & (Join-Path $PSScriptRoot 'setup-backend.ps1') -Action Migrate
+        if ($AuthorizedCallLimit) {
+            Push-Location (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend')
+            try {
+                $budget = & .\.venv\Scripts\python.exe -m tests.ai_benchmark @BudgetOptions --authorized-attempts $AuthorizedCallLimit --database $db --check-budget
+                if ($LASTEXITCODE -ne 0) { throw 'Live spending is paused. Review the budget and ledger.' }
+                $budget = $budget | ConvertFrom-Json
+                $safeLimit = $budget.safe_call_limit
+                if ($FirstBrowserCall) { $safeLimit = [Math]::Min($safeLimit, $budget.spent_attempts + 1) }
+                $env:AI_QWEN_CUMULATIVE_LIMIT = [string]$safeLimit
+                "Local ledger cap=$safeLimit; recorded attempts=$($budget.spent_attempts); estimated spend=$($budget.estimate_total) $($budget.currency)."
+            } finally {
+                Pop-Location
+            }
+        }
         & (Join-Path $PSScriptRoot 'start-dev.ps1') -FrontendPort $frontendPort -BackendPort $backendPort -WithAiWorker:([bool]$AuthorizedCallLimit)
     }
 } finally {

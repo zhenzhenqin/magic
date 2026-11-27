@@ -21,6 +21,10 @@
 
 本地流程由 `--run-local fake` 或 `--run-local qwen` 显式启用。脚本使用同源环回代理、专用已注册测试账号和给定的只读 SQLite 文件，经过现有上传、授权任务和轮询接口。若创建回包丢失，它按原键查询既有任务。脚本不直接调用百炼接口，也不会自动发起人工重试。运行结果写入新 CSV。带 `--run-local qwen` 的执行还要求匹配的 SQLite 及 Flash 配置、已批准调用次数和金额、地区、币种及核实的价格档位。
 
+真实联调时，给 `start-phase42-lab.ps1` 传入用户批准的总次数 `-AuthorizedCallLimit` 和同一组 `-BudgetOptions`。预算选项包含 `--region`、`--approved-budget`、`--currency`、`--price-reference`，以及三组 `--price-tier 上限:输入单价:输出单价`。三档上限为 32768、131072 和 262144，单价按每百万 Token 填写。使用已核对的账号地域及价目版本，首个浏览器用例同时使用 `-FirstBrowserCall`。后续批次继续使用原账本、原授权和同一组价格选项，通过 `-BenchmarkOptions` 选择用例。
+
+启动及每批提交前按原账本重新汇总浏览器和命令行产生的历史调用，校验累计次数、Token、地域端点和适用档位。下一次调用使用模型完整上下文与配置输出上限计算保守上界。用量未知、状态未结清、明细缺失或价格无法对应时暂停。本地估算用于控制联调，供应商账单按其计量、适用费用和结算规则确定。 [百炼模型价目](https://help.aliyun.com/zh/model-studio/model-pricing)
+
 ```powershell
 # 本地 Fake Worker 测试命令示例
 .\.venv\Scripts\python.exe -m tests.ai_benchmark --run-local fake --username benchmark_reader --database D:\DevEnv\tmp\benchmark-test.db --cases same-plate not-food --output D:\DevEnv\tmp\bench-fake.csv
