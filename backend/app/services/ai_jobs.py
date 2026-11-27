@@ -12,7 +12,7 @@ from app.core.database import utcnow
 from app.core.exceptions import ApiError
 from app.models.ai import AiJob, AiJobMedia, AiRetryRequest, AiUsageLog
 from app.models.diary import Meal, MediaAsset
-from app.services.ai_control import cumulative_exhausted, worker_online
+from app.services.ai_control import cumulative_exhausted, processing_identity, worker_online
 from app.services.ai_prompt import CONSENT_VERSION, PRIVACY_URL, PROMPT_VERSION
 from app.services.storage import MEDIA_MISSING, lock_owner
 
@@ -36,7 +36,8 @@ def owned_job(db: Session, owner: str, job_id: str) -> AiJob:
 
 def configuration_matches(settings: Settings, job: AiJob) -> bool:
     return (settings.ai_available and job.provider == settings.ai_provider and job.model == settings.ai_model_name
-            and job.prompt_version == PROMPT_VERSION and job.consent_version == CONSENT_VERSION)
+            and job.prompt_version == PROMPT_VERSION and job.consent_version == CONSENT_VERSION
+            and job.processing_fingerprint == processing_identity(settings))
 
 
 def request_fingerprint(data: JobCreate) -> str:
@@ -163,7 +164,8 @@ def create_job(db: Session, settings: Settings, owner: str, key: str, data: JobC
     require_slot(db, settings, owner, now)
     job = AiJob(id=str(uuid4()), user_id=owner, request_key=key, fingerprint=digest,
                 provider=settings.ai_provider, model=settings.ai_model_name, prompt_version=PROMPT_VERSION,
-                consent_version=CONSENT_VERSION, max_attempts=settings.ai_max_attempts,
+                consent_version=CONSENT_VERSION, processing_fingerprint=processing_identity(settings),
+                max_attempts=settings.ai_max_attempts,
                 form_meal_id=form_meal_id, media_snapshot=ids,
                 available_at=now, expires_at=now + timedelta(seconds=settings.ai_job_ttl_seconds),
                 created_at=now, updated_at=now)

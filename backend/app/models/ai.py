@@ -27,6 +27,7 @@ class AiJob(Base):
     model: Mapped[str] = mapped_column(String(100))
     prompt_version: Mapped[str] = mapped_column(String(24))
     consent_version: Mapped[str] = mapped_column(String(24))
+    processing_fingerprint: Mapped[str | None] = mapped_column(String(64))
     attempt_count: Mapped[int] = mapped_column(default=0)
     max_attempts: Mapped[int]
     result_json: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))

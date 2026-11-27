@@ -192,7 +192,9 @@ class AiWorker:
                 verified = False
             quota = usage(db, self.settings, claim.owner, now, exclude=claim.token)
             code = None
-            if not verified:
+            if not configuration_matches(self.settings, job):
+                code = "ai_configuration_changed"
+            elif not verified:
                 code = "ai_images_expired"
             elif job.expires_at <= now:
                 code = "ai_expired"

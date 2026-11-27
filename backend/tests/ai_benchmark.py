@@ -27,7 +27,7 @@ FIELDS = (
     "recognized_foods", "missing", "wrong", "duplicate", "json_valid", "end_to_end_ms", "provider_elapsed_ms",
     "input_tokens", "output_tokens", "usage_known", "nutrition_review", "attempt_statuses", "failure_retry_reasons",
     "upstream_request_ids", "estimate_amount", "estimate_currency", "price_reference", "billed_amount", "billed_currency",
-    "billing_reference", "human_review",
+    "billing_reference", "human_review", "pause_reason",
 )
 
 
@@ -145,6 +145,18 @@ def record_attempts(row, records, args):
         row.update(estimate_amount=estimate / 1_000_000, estimate_currency=args.currency, price_reference=args.price_reference)
 
 
+def live_pause_reason(case, row, budget_reached):
+    if row.get("json_valid") != "是":
+        return "技术验证未通过，暂停后续付费调用"
+    if row["result_status"] not in case["status"]:
+        return "结果状态异常，待人工复核"
+    if not row.get("usage_known") or row.get("estimate_amount") is None:
+        return "用量或估算费用未知，待核对账本"
+    if budget_reached:
+        return "估算金额已达到授权预算"
+    return ""
+
+
 def run_cases(api, connection, cases, args):
     response = api.send("GET", "/ai/capabilities")
     response.raise_for_status()
@@ -158,6 +170,8 @@ def run_cases(api, connection, cases, args):
         response.raise_for_status()
         if not response.json()["available"]:
             row["failure_retry_reasons"] = response.json()["exhausted_reason"]
+            if args.run_local == "qwen":
+                row["pause_reason"] = "额度已耗尽或不可用"
             yield row
             break
         photo_ids = []
@@ -168,14 +182,26 @@ def run_cases(api, connection, cases, args):
             uploaded.raise_for_status()
             photo_ids.append(uploaded.json()["id"])
         now = time.monotonic()
-        job = api.create_job(photo_ids, cap["consent_version"])
-        while job["status"] in ("pending", "running"):
-            if time.monotonic() - now > 930 or not job["worker_online"]:
-                raise RuntimeError("Worker stopped or task timed out. Check the existing task before retrying.")
-            time.sleep(1.5)
-            response = api.send("GET", "/ai/jobs/" + job["id"])
-            response.raise_for_status()
-            job = response.json()
+        job = None
+        try:
+            job = api.create_job(photo_ids, cap["consent_version"])
+            while job["status"] in ("pending", "running"):
+                if time.monotonic() - now > 930 or not job["worker_online"]:
+                    raise RuntimeError("Worker stopped or task timed out. Check the existing task before retrying.")
+                time.sleep(1.5)
+                response = api.send("GET", "/ai/jobs/" + job["id"])
+                response.raise_for_status()
+                job = response.json()
+        except (RuntimeError, httpx.HTTPError):
+            if args.run_local != "qwen":
+                raise
+            row.update(result_status="unknown", end_to_end_ms=round((time.monotonic() - now) * 1000),
+                       pause_reason="任务状态未确认，核对原任务及账本后才能继续")
+            if job:
+                row["job_id"] = job["id"]
+                record_attempts(row, attempts(connection, job["id"]), args)
+            yield row
+            break
         row.update(job_id=job["id"], result_status=job["status"], end_to_end_ms=round((time.monotonic() - now) * 1000),
                    failure_retry_reasons=job["error_code"] or "", json_valid="否" if job["error_code"] == "ai_invalid_result" else "")
         if job["result"] is not None:
@@ -184,11 +210,12 @@ def run_cases(api, connection, cases, args):
             row.update(result_status=recognition.status, recognized_foods="、".join(names), json_valid="是",
                        **compare(case, recognition.status, names))
         record_attempts(row, attempts(connection, job["id"]), args)
-        yield row
         if args.run_local == "qwen":
             estimate_total += row.get("estimate_amount", 0)
-            if estimate_total >= args.approved_budget:
-                break
+            row["pause_reason"] = live_pause_reason(case, row, estimate_total >= args.approved_budget)
+        yield row
+        if row.get("pause_reason"):
+            break
 
 
 def options():
@@ -241,13 +268,13 @@ def main():
         public_regions = {"dashscope.aliyuncs.com": "cn-beijing", "dashscope-intl.aliyuncs.com": "ap-southeast-1",
                           "cn-hongkong.dashscope.aliyuncs.com": "cn-hongkong"}
         region = public_regions.get(host) or (host.split(".")[1] if host.endswith(".maas.aliyuncs.com") else None)
-        if (not args.region or args.region != region or args.approved_budget is None
+        if (not args.cases or len(cases) > 8 or not args.region or args.region != region or args.approved_budget is None
                 or not args.approved_budget.is_finite() or args.approved_budget <= 0
                 or not args.authorized_attempts or args.authorized_attempts <= 0
                 or not args.currency or not args.price_reference or any(value is None or not value.is_finite() or value < 0 for value in price)
                 or settings.ai_provider != "qwen" or not settings.ai_available or settings.ai_model != "qwen3-vl-flash"
-                or Path(settings.db_url.database).resolve() != database):
-            parser.error("Real execution needs the approved attempts, budget, region, price card and matching Flash-only settings")
+                or settings.ai_max_attempts != 1 or Path(settings.db_url.database).resolve() != database):
+            parser.error("Real execution needs a selected batch of up to 8 cases, approved limits and matching Flash settings with one attempt per job")
     with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as ledger:
         ledger.row_factory = sqlite3.Row
         if args.run_local == "qwen":
@@ -263,7 +290,10 @@ def main():
                     writer.writerow(spreadsheet_row(row))
                     stream.flush()
                     print(f"{row['case']}: {row.get('result_status') or '未执行'}")
+                    if row.get("pause_reason"):
+                        print(row["pause_reason"])
+                        return 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

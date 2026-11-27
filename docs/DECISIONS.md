@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | Web 与包管理 | Vue 3、TypeScript、Vite 8、Tailwind CSS、原创组件。优先使用 pnpm，统计阶段使用 ECharts | 现有 Node.js 22.19.0 达到 Vite 8 的 Node 22 门槛。本机 pnpm 可运行。阶段 1 验证安装、开发启动和生产构建 |
 | Android | Capacitor 8 候选，保留现有 JDK 21.0.9 | 当前 Node.js 满足 Capacitor 8 要求。阶段 9 核验实际 Android Studio、SDK 36、Build Tools、Gradle 与 Android Gradle Plugin 组合 |
-| 后端 | Python 3.13 候选，FastAPI、SQLAlchemy 2.x、Alembic | 本机 Python 3.13.9 可用。阶段 2 验证后端依赖和 MySQL 驱动，阶段 5 核验 Linux x86_64 的图像依赖与 ONNX Runtime wheel |
-| 数据库 | MySQL 8.4 LTS，项目独立数据库、用户和迁移 | 本机 MySQL 8.0.34 可供开发环境评估。迁移验收使用独立的 8.4 实例。服务器现有 MariaDB 留给既有业务使用 |
+| 后端 | Python 3.13、FastAPI、SQLAlchemy 2.x、Alembic | 本机 Python 3.13.9 用于实际 API。阶段 5 核验 Linux x86_64 的图像依赖与 ONNX Runtime wheel |
+| 数据库 | SQLite 为少量亲友使用版本的首选 | 采用文件库、WAL、外键及短写事务。MySQL 8.4 LTS 为未来高并发扩展候选 |
 | AI 食物识别 | 服务端通过百炼的 OpenAI 兼容接口接入 Qwen3-VL | 首测候选 `qwen3-vl-flash`，对照候选 `qwen3-vl-plus`。实际地区权限、质量、延迟与费用待联调 |
 | CPU 抠图 | rembg、ONNX Runtime CPU、Pillow，独立 Worker | 阶段 5 优先测 `u2netp` 与单任务并发，结合质量、峰值 RSS、CPU 和吞吐量决定模型、上线并发及 Worker 部署位置 |
 | 图片存储 | 私有本地文件系统，预留对象存储接口 | 起步组件较少。项目需验证访问授权、备份恢复和真实图片存储增长 |
@@ -56,3 +56,9 @@
 - 暂定每日每用户 10 次、全局 30 次，按 UTC 结算。项目记录尝试和供应商返回的 Token，不猜测账单价格。
 - 候选归属于账号和识别任务，采用稳定 UUID。确认保存后复制精简来源到明细，让正式历史独立于任务保留期。
 - 停在本地开发与模拟验收。中国内地或国际站账号应用各自工作空间的地址及策略，实际地区由联调账号决定。[百炼兼容接口](https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope)
+
+## 阶段 4.2
+
+- 保留 SQLite 文件库。AI Worker 的 `BEGIN IMMEDIATE` 和健康心跳 upsert 采用 SQLite 语义，满足当前轻量部署方向。正式部署验收需实际演练数据库与媒体一致性备份和恢复，测量写入并发、忙等待和磁盘配额，并设定低空间保护。未来切换 MySQL 需重新验证领取、结算和跨请求幂等。
+- 识别任务保存不含密钥的服务端点摘要。Worker 在领取和发送前绑定原 Provider、模型、工作空间或地域端点、授权和提示词版本。迁移后的未绑定任务不能再发送，原有完成结果可继续读取。
+- 真实模型联调只计划 `qwen3-vl-flash`。使用一个持久化隔离账本、先做三例技术验证、禁用自动重试。凭据和明确预算授权齐备后再执行。

@@ -27,6 +27,8 @@ API 模式提供真实账户、个人手账、饮食月历、每日摘要及私�
 
 真实请求默认被累计上限 `AI_QWEN_CUMULATIVE_LIMIT=0` 禁止。获得用户批准后，在独立联调库写入明确的累计尝试上限。浏览器能在同账号下恢复上次任务，Worker 离线时可继续手动记录。[联调素材和脚本](docs/ai-benchmark/README.md)
 
+阶段 4.2 使用独立联调目录 `D:/DevEnv/fooddiary-phase42`。在仓库根运行 `.\scripts\start-phase42-lab.ps1 -PrepareOnly` 可准备环境，直接运行脚本会以真实调用关闭的状态启动。真实联调只需在该目录的私有 `provider.env` 填入 `AI_BASE_URL` 和 `AI_API_KEY`，并明确授权次数和费用后再启动专用 Worker。 [联调及授权说明](docs/PHASE-4.2.md)
+
 ```powershell
 .\scripts\setup-backend.ps1 -Action Migrate
 .\scripts\start-dev.ps1 -WithAiWorker -FrontendPort 15175 -BackendPort 18021
