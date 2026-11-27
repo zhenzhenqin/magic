@@ -68,6 +68,8 @@ def ready(db: Database) -> SystemStatus:
 @authentication.post("/register", status_code=201, responses={409: {"model": ProblemResponse}})
 def register(data: Registration, request: Request, db: Database) -> UserProfile:
     """创建用户名、密码和昵称，成功后由客户端引导登录。"""
+    if not request.app.state.settings.registration_allowed:
+        raise ApiError(403, "registration_closed", "当前仅限已有账号登录。")
     limit(request, "register", request.app.state.settings.register_attempts)
     user = auth.register(db, data, request.app.state.passwords)
     return UserProfile.model_validate(user)

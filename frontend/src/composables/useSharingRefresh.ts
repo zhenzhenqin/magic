@@ -14,16 +14,18 @@ export function useSharingRefresh(refresh: () => void, period = 25_000) {
   function run() {
     if (Date.now() - lastRefresh >= 400) refreshNow()
   }
-  function visibility() {
+  function updateAvailability(refreshIfAlreadyActive: boolean) {
+    const wasActive = online.value && foreground.value
+    online.value = navigator.onLine
     foreground.value = !document.hidden
     clearInterval(timer)
     if (!foreground.value || !online.value) return
+    // Entering the active state also invalidates each page's private query key.
+    if (wasActive && refreshIfAlreadyActive) refreshNow()
     timer = setInterval(run, period)
   }
-  function connection() {
-    online.value = navigator.onLine
-    visibility()
-  }
+  const visibility = () => updateAvailability(false)
+  const connection = () => updateAvailability(true)
   onMounted(() => {
     window.addEventListener('focus', run)
     window.addEventListener('online', connection)

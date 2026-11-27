@@ -2,6 +2,7 @@
 import { ArrowLeft, HandHeart, LockKeyhole } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ApiError } from '../api/client'
 import { sharingFields, useSharingApi } from '../api/sharingRepository'
 import type { Friend, HistoryScope, ShareFlags, ShareKey } from '../api/sharingRepository'
 import ModalSurface from '../components/ModalSurface.vue'
@@ -26,8 +27,17 @@ const error = ref('')
 const busy = ref(false)
 const confirmation = ref<'history' | 'stop' | 'remove'>()
 const historyOptions = { today: '从今天开始', week: '最近七天', month: '最近三十天', all: '全部历史' }
-const historyExplanation = computed(() => scope.value === 'all' ? '对方可以查看全部符合权限的日期。'
-  : '对方可查看 ' + shiftDay(today.value, { today: 0, week: -6, month: -29 }[scope.value]) + ' 及之后符合权限的记录。')
+const existingStart = computed(() => friend.value?.outgoing.history_start ?? 'all')
+const addsPermissions = computed(() => keys.some(key => flags[key] && !friend.value?.outgoing.permissions[key]))
+const retainsPast = computed(() => Boolean(friend.value?.outgoing.granted_at && !scopeDirty.value
+  && addsPermissions.value && (flags.history || friend.value.outgoing.history_scope === 'today')
+  && (existingStart.value === 'all' || existingStart.value < today.value)))
+const chosenStart = computed(() => {
+  if (!scopeDirty.value) return existingStart.value
+  return scope.value === 'all' ? 'all' : shiftDay(today.value, { today: 0, week: -6, month: -29 }[scope.value])
+})
+const historyExplanation = computed(() => chosenStart.value === 'all' ? '对方可以查看全部符合权限的历史记录。'
+  : '对方可以查看 ' + chosenStart.value + ' 及之后符合权限的用餐记录。')
 
 function sync(value: Friend | undefined) {
   if (!value) return
@@ -46,7 +56,7 @@ function change(key: ShareKey, checked: boolean) {
   keys.filter(item => !available(item)).forEach(item => { flags[item] = false })
   if (!flags.history) { scope.value = 'today'; scopeDirty.value = false }
 }
-async function perform(action: 'save' | 'stop' | 'remove') {
+async function perform(action: 'save' | 'stop' | 'remove', history?: 'confirm' | 'today') {
   const item = friend.value
   if (!item || busy.value) return
   busy.value = true
@@ -59,23 +69,30 @@ async function perform(action: 'save' | 'stop' | 'remove') {
       const result = action === 'stop'
         ? await api.stop(id.value, item.relationship_id, item.outgoing.version)
         : await api.save(id.value, item.relationship_id, item.outgoing.version, { ...flags },
-          scopeDirty.value && flags.history ? scope.value : undefined)
+          history === 'today' ? 'today' : scopeDirty.value && flags.history ? scope.value : undefined,
+          history === 'confirm' && !scopeDirty.value ? existingStart.value : undefined)
       friend.value = result
       sync(result)
       message.value = action === 'stop' ? '已停止向对方共享。' : '共享设置已保存。'
     }
   } catch (failure) {
+    if (failure instanceof ApiError && failure.code === 'history_choice_required') {
+      confirmation.value = 'history'
+      return
+    }
     error.value = authMessage(failure)
   } finally {
-    confirmation.value = undefined
     busy.value = false
   }
 }
 function save() {
-  if (flags.history && friend.value && friend.value.outgoing.history_scope !== 'today'
-    && keys.some(key => flags[key] && !friend.value?.outgoing.permissions[key])) scopeDirty.value = true
-  if (flags.history && scopeDirty.value && scope.value !== 'today') confirmation.value = 'history'
+  if (retainsPast.value || (flags.history && scopeDirty.value && scope.value !== 'today')) confirmation.value = 'history'
   else void perform('save')
+}
+function confirm(action: 'history' | 'stop' | 'remove' | undefined, fromToday = false) {
+  confirmation.value = undefined
+  if (action === 'history') void perform('save', fromToday ? 'today' : 'confirm')
+  else if (action) void perform(action)
 }
 function preset() {
   keys.forEach(key => { flags[key] = ['records', 'names', 'stickers'].includes(key) })
@@ -132,9 +149,10 @@ function preset() {
       <p>{{ confirmation === 'history' ? historyExplanation : confirmation === 'remove' ? '双方的共享权限会立即失效。重新添加后需要重新授权。' : '停止后，对方发起的新请求将无法读取你的共享内容。' }}</p>
       <div class="toolbar">
         <button type="button" :disabled="busy" class="button button-primary"
-          @click="perform(confirmation === 'history' ? 'save' : confirmation === 'remove' ? 'remove' : 'stop')">
+          @click="confirm(confirmation)">
           {{ confirmation === 'history' ? '确认共享范围' : confirmation === 'remove' ? '确认解除' : '确认停止共享' }}
         </button>
+        <button v-if="confirmation === 'history'" type="button" class="button" :disabled="busy" @click="confirm('history', true)">所有共享项仅从今天开始</button>
         <button type="button" :disabled="busy" class="button" @click="confirmation = undefined">取消</button>
       </div>
     </ModalSurface>

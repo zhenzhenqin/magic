@@ -234,3 +234,88 @@ test('@sharing 三账号好友关系与授权，自动同步、媒体撤销和�
     await Promise.all(contexts.map(context => context.close()))
   }
 })
+
+test('@sharing 断网与返回前台立即重验授权，取消旧图读取', async ({ browser, baseURL }) => {
+  const contexts = await Promise.all([browser.newContext({ baseURL }), browser.newContext({ baseURL })])
+  const [author, reader] = await Promise.all(contexts.map(context => context.newPage()))
+  try {
+    const a = await openAccount(author, '复查作者')
+    const b = await openAccount(reader, '复查读者')
+    const day = await today(author)
+    const shared = base + a.id
+    const createRequest = await author.request.post(base + 'requests', { headers: a.headers, data: { public_id: b.id } })
+    const { id: requestId } = await createRequest.json()
+    expect((await reader.request.post(base + 'requests/' + requestId + '/accept', { headers: b.headers })).status()).toBe(200)
+    const configPath = base + b.id + '/sharing'
+    async function photoAccess(enabled: boolean) {
+      const { relationship_id, outgoing } = await (await author.request.get(configPath, { headers: a.headers })).json()
+      const result = await author.request.put(configPath, { headers: a.headers, data: {
+        relationship_id, version: outgoing.version, permissions: enabled ? { records: true, names: true, photos: true } : {},
+      } })
+      expect(result.status()).toBe(200)
+    }
+    async function upload() {
+      const data = await import('node:fs/promises').then(fs => fs.readFile(new URL('oat-biscuits.jpg', fixtures)))
+      const response = await author.request.post('/api/v1/media/upload', {
+        headers: a.headers, multipart: { file: { name: 'sample.jpg', mimeType: 'image/jpeg', buffer: data } },
+      })
+      expect(response.status()).toBe(201)
+      return (await response.json()).id
+    }
+    const first = await upload()
+    const body = { meal_type: 'breakfast', local_date: day, local_time: '08:15', timezone: 'Asia/Shanghai',
+      items: [{ food_name: '网络恢复用例' }], media_ids: [first] }
+    const saved = await author.request.post('/api/v1/meals', { data: body,
+      headers: { ...a.headers, 'Idempotency-Key': randomUUID() } })
+    expect(saved.status()).toBe(201)
+    const meal = await saved.json()
+    await photoAccess(true)
+    const url = '/friends/' + a.id + '/diary?date=' + day
+    await reader.goto(url)
+    const picture = reader.getByRole('img', { name: '共享照片' })
+    await expect(picture).toBeVisible()
+    const oldBlob = (await picture.getAttribute('src'))!
+    await contexts[1].setOffline(true)
+    await expect(reader.getByText(/网络已断开/)).toBeVisible()
+    await expect(picture).toHaveCount(0)
+    expect(await reader.evaluate(blob => fetch(blob).then(() => false, () => true), oldBlob)).toBe(true)
+    await photoAccess(false)
+    const onConnect = reader.waitForResponse(response => response.url().endsWith(shared + '/sharing'), { timeout: 6_000 })
+    await contexts[1].setOffline(false)
+    expect((await onConnect).status()).toBe(200)
+    await expect(reader.getByText('这本手账暂未共享。')).toBeVisible()
+    await photoAccess(true)
+    const obsolete = shared + '/media/' + first + '/thumbnail'
+    let releaseRequest = () => {}
+    const held = new Promise<void>(resolve => { releaseRequest = resolve })
+    await reader.route(request => request.pathname === obsolete, async intercepted => {
+      await held
+      await intercepted.continue().catch(() => {})
+    })
+    const requested = reader.waitForRequest(request => new URL(request.url()).pathname === obsolete)
+    await reader.getByRole('button', { name: '刷新共享内容' }).click()
+    await requested
+    const cancelled = reader.waitForEvent('requestfailed', { predicate: request => new URL(request.url()).pathname === obsolete, timeout: 6_000 })
+    await reader.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    try {
+      await cancelled
+      await expect(reader.getByText('网络恢复用例', { exact: true })).toHaveCount(0)
+      const replacement = await upload()
+      const updated = await author.request.patch('/api/v1/meals/' + meal.id, { headers: a.headers,
+        data: { ...body, media_ids: [replacement], version: meal.version } })
+      expect(updated.status()).toBe(200)
+      const onReturn = reader.waitForResponse(response => response.url().endsWith(shared + '/sharing'), { timeout: 6_000 })
+      const newImage = reader.waitForResponse(response => new URL(response.url()).pathname === shared + '/media/' + replacement + '/thumbnail')
+      await reader.evaluate(() => {
+        Reflect.deleteProperty(document, 'hidden')
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      expect((await onReturn).status()).toBe(200)
+      expect((await newImage).status()).toBe(200)
+      await expect(picture).toBeVisible()
+    } finally { releaseRequest() }
+  } finally { await Promise.all(contexts.map(context => context.close())) }
+})

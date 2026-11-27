@@ -67,6 +67,7 @@ class GrantEdit(Input):
     version: Annotated[int, Field(ge=0)]
     permissions: ShareFlags
     history_scope: HistoryScope | None = None
+    confirm_history_start: date | Literal["all"] | None = None
 
 
 class SharedMedia(BaseModel):

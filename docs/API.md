@@ -93,7 +93,7 @@
 | `POST /friends/requests/{id}/{accept\|reject\|cancel}` | 接受、拒绝或取消申请，校验操作者角色 |
 | `DELETE /friends/{peer}?relationship_id=…` | 解除该关系并撤销双向授权，已不存在时返回 204 |
 | `GET /friends/{peer}/sharing` | 读取自己的 `outgoing` 及对方的 `incoming` |
-| `PUT /friends/{peer}/sharing` | 提交 `relationship_id`、`version`、`permissions`，可显式提供 `history_scope`。过期版本返回 409 |
+| `PUT /friends/{peer}/sharing` | 提交 `relationship_id`、`version`、`permissions`，可显式选择 `history_scope`。沿用过去起点给新增项授权时须传 `confirm_history_start` 为实际日期或 `all`。缺少确认返回 `422 history_choice_required`，过期版本返回 409 |
 | `DELETE /friends/{peer}/sharing` | 参数 `relationship_id`、`version`，仅停止当前账号的授出方向 |
 | `GET /friends/{peer}/meals`、`/meals/{meal_id}` | 共享餐次与明细。列表参数 `date`、`page`、`limit`，单页最多 50 |
 | `GET /friends/{peer}/calendar`、`/statistics/daily` | 参数分别为 `month`、`date`。仅使用授权内记录和字段 |

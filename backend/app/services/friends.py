@@ -187,7 +187,7 @@ def normalize_flags(flags):
     return sum(FLAGS[key] for key, value in flags.model_dump().items() if value)
 
 
-def update_grant(db, actor, public_id, relationship_id, version, permissions, scope=None):
+def update_grant(db, actor, public_id, relationship_id, version, permissions, scope=None, confirmed_start=None):
     lock_owner(db, actor)
     match, other = relation(db, actor, public_id)
     if match.id != relationship_id:
@@ -204,16 +204,16 @@ def update_grant(db, actor, public_id, relationship_id, version, permissions, sc
     now = utcnow()
     old_flags = stored.flags if stored else 0
     old_scope, old_start = (stored.history_scope, stored.history_start) if stored else ("today", None)
-    if flags & ~old_flags and flags & FLAGS["history"] and old_scope != "today" and scope is None:
-        raise ApiError(422, "history_choice_required", "新增共享权限前，请再次确认历史范围。")
+    settings = db.get(UserSettings, actor)
+    today = now.astimezone(ZoneInfo(settings.timezone if settings else "Asia/Shanghai")).date()
     next_scope = scope or (old_scope if old_flags and flags & FLAGS["history"] else "today")
     start = old_start
     if not flags:
         next_scope, start = "today", None
     elif not old_flags or scope is not None or next_scope != old_scope:
-        settings = db.get(UserSettings, actor)
-        today = now.astimezone(ZoneInfo(settings.timezone if settings else "Asia/Shanghai")).date()
         start = None if next_scope == "all" else today - timedelta(days={"today": 0, "week": 6, "month": 29}[next_scope])
+    elif flags & ~old_flags and (start is None or start < today) and confirmed_start != (start or "all"):
+        raise ApiError(422, "history_choice_required", "新增权限会开放过去的记录，请确认历史起点或选择仅从今天开始。")
 
     if not stored:
         stored = SharePermission(friendship_id=match.id, owner_id=actor, viewer_id=other.id, version=0)

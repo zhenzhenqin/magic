@@ -301,7 +301,7 @@ def test_testing_never_targets_project_development_db(settings):
 
 def test_production_uses_https_and_secure_cookie(settings):
     raw = settings.model_dump()
-    raw.update(app_env="production", app_origins=["https://food.example"])
+    raw.update(app_env="production", app_origins=["https://food.example"], public_registration=True)
     config = Settings(_env_file=None, **raw)
     migrate(config)
     with TestClient(create_app(config), base_url="https://food.example") as production:

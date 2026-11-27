@@ -51,12 +51,12 @@ def connect(client, a, b):
     return client.get(route(b, "/sharing"), headers=a.headers).json()
 
 
-def update(client, owner, viewer, current=None, scope=None, **flags):
+def update(client, owner, viewer, current=None, scope=None, confirm_start=None, **flags):
     path = route(viewer, "/sharing")
     current = current or client.get(path, headers=owner.headers).json()
     return client.put(path, headers=owner.headers, json={
         "relationship_id": current["relationship_id"], "version": current["outgoing"]["version"],
-        "history_scope": scope, "permissions": flags,
+        "history_scope": scope, "confirm_history_start": confirm_start, "permissions": flags,
     })
 
 
@@ -287,6 +287,31 @@ def test_revocation_serializes_with_reads(app, client, peers):
         revoke = pool.submit(update, TestClient(app), a, b)
         assert read.result().status_code in (200, 404)
         assert revoke.result().status_code == 200
+    assert client.get(path, headers=b.headers).status_code == 404
+
+
+@pytest.mark.parametrize("permission", ["photos", "stickers", "notes", "nutrition"])
+def test_fixed_today_grant_requires_cross_day_confirmation(client, peers, monkeypatch, permission):
+    a, b, _ = peers
+    monkeypatch.setattr(friends, "utcnow", lambda: datetime(2026, 11, 1, 12, tzinfo=UTC))
+    earlier = save(client, a, "2026-11-01", note="早先的备注")
+    connect(client, a, b)
+    grant = update(client, a, b, records=True, names=True).json()
+    assert grant["outgoing"]["history_start"] == "2026-11-01"
+    path = route(a, "/meals/" + earlier["id"])
+    monkeypatch.setattr(friends, "utcnow", lambda: datetime(2026, 11, 28, 12, tzinfo=UTC))
+    flags = {"records": True, "names": True, permission: True}
+    for confirmation in (None, "2026-11-27"):
+        warning = update(client, a, b, grant, confirm_start=confirmation, **flags)
+        assert warning.status_code == 422 and warning.json()["error"]["code"] == "history_choice_required"
+    assert not client.get(route(b, "/sharing"), headers=a.headers).json()["outgoing"]["permissions"][permission]
+    assert "note" not in client.get(path, headers=b.headers).json()
+    shared = update(client, a, b, grant, confirm_start="2026-11-01", **flags)
+    assert shared.status_code == 200 and shared.json()["outgoing"]["history_start"] == "2026-11-01"
+    if permission == "notes":
+        assert client.get(path, headers=b.headers).json()["note"] == "早先的备注"
+    rebased = update(client, a, b, scope="today", **flags)
+    assert rebased.json()["outgoing"]["history_start"] == "2026-11-28"
     assert client.get(path, headers=b.headers).status_code == 404
 
 

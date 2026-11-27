@@ -1,0 +1,30 @@
+[Unit]
+Description=FoodDiary local CPU Sticker Worker
+After=fooddiary-api.service
+
+[Service]
+User=fooddiary
+Group=fooddiary
+WorkingDirectory=/opt/fooddiary/current/backend
+EnvironmentFile=/opt/fooddiary/shared/config/fooddiary.env
+Environment=OMP_NUM_THREADS=1
+ExecStart=/opt/fooddiary/current/backend/.sticker/bin/python -m app.sticker_worker
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/fooddiary/shared/data /opt/fooddiary/shared/media
+RestrictAddressFamilies=AF_UNIX
+Nice=10
+CPUQuota=100%
+MemoryHigh=384M
+MemoryMax=512M
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
+
+[Install]
+WantedBy=multi-user.target

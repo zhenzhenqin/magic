@@ -1,0 +1,68 @@
+# Render domain/IP and certificate paths with render-nginx.py before installing.
+server {
+    listen 80;
+    server_name @HOST@;
+    access_log off;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /opt/fooddiary/shared/acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+    location / {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        return 308 https://@HOST@$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name @HOST@;
+    ssl_certificate @CERT@;
+    ssl_certificate_key @KEY@;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    root /opt/fooddiary/current/web;
+    access_log off;
+    client_max_body_size 10616832;
+    client_body_timeout 30s;
+    send_timeout 30s;
+    if ($host != "@HOST@") { return 421; }
+    if (-f /opt/fooddiary/shared/maintenance) { return 503; }
+
+    include /etc/nginx/fooddiary/security.conf;
+    add_header Cache-Control "no-store" always;
+
+    location ^~ /api/ {
+        include /etc/nginx/fooddiary/security.conf;
+        add_header Cache-Control "no-store" always;
+        proxy_cache off;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+        proxy_hide_header Cache-Control;
+        proxy_http_version 1.1;
+        proxy_request_buffering off;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 130s;
+        proxy_read_timeout 130s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Connection "";
+        proxy_pass http://127.0.0.1:18080;
+    }
+    location ~ ^/(?:data|media|shared|config|models|logs|backup)(?:/|$) { return 404; }
+    location ~ (?:^|/)\. { return 404; }
+    location ~ "^/assets/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$" {
+        include /etc/nginx/fooddiary/security.conf;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        try_files $uri @asset_missing;
+    }
+    location @asset_missing {
+        internal;
+        include /etc/nginx/fooddiary/security.conf;
+        add_header Cache-Control "no-store" always;
+        return 404;
+    }
+    location /assets/ { try_files $uri =404; }
+    location / { try_files $uri /index.html; }
+}

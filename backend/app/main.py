@@ -34,7 +34,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             engine.dispose()
 
-    app = FastAPI(title="FoodDiary API", version="0.6.0", debug=False, lifespan=lifespan)
+    docs = {} if settings.app_env != "production" else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    app = FastAPI(title="FoodDiary API", version="0.7.0", debug=False, lifespan=lifespan, **docs)
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)

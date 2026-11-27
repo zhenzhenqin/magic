@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     login_attempts: int = Field(default=10, ge=1, le=1000)
     register_attempts: int = Field(default=8, ge=1, le=1000)
     refresh_attempts: int = Field(default=60, ge=1, le=1000)
+    public_registration: bool | None = None
     limit_window_seconds: int = Field(default=60, ge=1, le=3600)
     argon_memory_kib: int = Field(default=32768, ge=19456, le=131072)
     argon_time_cost: int = Field(default=2, ge=2, le=5)
@@ -108,8 +109,9 @@ class Settings(BaseSettings):
             raise ValueError("Provide at least one trusted browser origin")
         for value in values:
             parsed = urlsplit(value)
+            _ = parsed.port
             if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or any(
-                (parsed.path, parsed.query, parsed.fragment, "*" in value)
+                (parsed.path, parsed.query, parsed.fragment, "*" in value, "\\" in value, any(c.isspace() for c in value))
             ):
                 raise ValueError("Browser origins must be explicit HTTP(S) origins without paths")
         return values
@@ -125,6 +127,12 @@ class Settings(BaseSettings):
             raise ValueError("Production prohibits the fake AI provider")
         if self.app_env == "production" and self.sticker_provider == "fake":
             raise ValueError("Production prohibits the fake sticker provider")
+        if self.app_env == "production":
+            url = make_url(self.database_url)
+            if url.get_backend_name() != "sqlite" or not url.database or not Path(url.database).is_absolute() or url.query:
+                raise ValueError("Production requires an absolute SQLite database file path")
+            if not self.media_dir.is_absolute():
+                raise ValueError("Production requires an absolute private media path")
         if self.ai_provider == "deepseek" and self.ai_model not in ("", DEEPSEEK_VISION_MODEL):
             raise ValueError("DeepSeek food recognition requires deepseek-flash")
         if self.ai_deepseek_compact_request and (self.ai_provider != "deepseek" or self.ai_max_images != 1
@@ -154,6 +162,10 @@ class Settings(BaseSettings):
     @property
     def secure_cookie(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def registration_allowed(self) -> bool:
+        return self.public_registration if self.public_registration is not None else self.app_env != "production"
 
     @property
     def db_url(self):

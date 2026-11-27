@@ -1,0 +1,23 @@
+[Unit]
+Description=FoodDiary external AI Worker, start only after cost authorization
+After=network-online.target fooddiary-api.service
+Wants=network-online.target
+
+[Service]
+User=fooddiary
+Group=fooddiary
+WorkingDirectory=/opt/fooddiary/current/backend
+EnvironmentFile=/opt/fooddiary/shared/config/fooddiary.env
+ExecStart=/opt/fooddiary/current/backend/.venv/bin/python -m app.ai_worker
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=140s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/fooddiary/shared/data
+MemoryMax=320M
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100

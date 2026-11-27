@@ -91,3 +91,4 @@ Playwright 使用本机 Chrome，API 测试自动启动独立的后端及临时�
 - [阶段 2 汇报与截图](docs/PHASE-2.md)、[API](docs/API.md)、[数据库](docs/DATABASE.md)与[认证安全](docs/SECURITY.md)
 - [阶段 3 汇报与截图](docs/PHASE-3.md)及[私有图片存储](docs/STORAGE.md)
 - [阶段 4 汇报与截图](docs/PHASE-4.md)及[AI 食物识别](docs/AI.md)
+- [阶段 7.1 汇报](docs/PHASE-7.1.md)、[部署说明](docs/DEPLOYMENT.md)及[备份恢复](docs/BACKUP-RESTORE.md)

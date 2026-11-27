@@ -63,7 +63,8 @@ def grants(user: CurrentUser, db: Database, peer_id: PublicId) -> Friend:
 
 @router.put("/{peer_id}/sharing")
 def update(user: CurrentUser, db: Database, peer_id: PublicId, data: GrantEdit) -> Friend:
-    return friends.update_grant(db, user.id, peer_id, str(data.relationship_id), data.version, data.permissions, data.history_scope)
+    return friends.update_grant(db, user.id, peer_id, str(data.relationship_id), data.version, data.permissions,
+                                data.history_scope, data.confirm_history_start)
 
 
 @router.delete("/{peer_id}/sharing")

@@ -1,0 +1,26 @@
+[Unit]
+Description=FoodDiary API
+After=network.target
+
+[Service]
+User=fooddiary
+Group=fooddiary
+WorkingDirectory=/opt/fooddiary/current/backend
+EnvironmentFile=/opt/fooddiary/shared/config/fooddiary.env
+ExecStart=/opt/fooddiary/current/backend/.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 18080 --workers 1 --no-access-log --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=40s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/fooddiary/shared/data /opt/fooddiary/shared/media
+MemoryHigh=384M
+MemoryMax=576M
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
+
+[Install]
+WantedBy=multi-user.target

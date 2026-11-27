@@ -38,10 +38,11 @@ def main():
     simulated = "--fake-ai" in sys.argv[3:]
     offline = "--no-ai-worker" in sys.argv[3:]
     sticker_tests = "--fake-stickers" in sys.argv[3:]
+    stable_session = simulated or sticker_tests
     settings = isolated_settings(
         root / "browser-test.db", app_origins=[f"http://127.0.0.1:{frontend_port}"],
-        access_token_seconds=120 if sticker_tests else 4,
-        refresh_token_seconds=600 if sticker_tests else 12, register_attempts=100,
+        access_token_seconds=120 if stable_session else 4,
+        refresh_token_seconds=600 if stable_session else 12, register_attempts=100,
         login_attempts=100, refresh_attempts=150,
         ai_enabled=simulated, ai_provider="fake" if simulated else "qwen",
         ai_user_daily_limit=3 if "--phase-41" in sys.argv[3:] else 1, ai_global_daily_limit=100,

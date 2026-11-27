@@ -88,8 +88,9 @@ export function useSharingApi() {
       '/friends/requests/' + encodeURIComponent(id) + '/' + action, { method: 'POST' },
     ),
     sharing: (id: string, signal?: AbortSignal) => api<Friend>(path(id) + '/sharing', { signal }),
-    save: (id: string, relationship_id: string, version: number, permissions: ShareFlags, history_scope?: HistoryScope) =>
-      api<Friend>(path(id) + '/sharing', { method: 'PUT', body: { relationship_id, version, permissions, history_scope } }),
+    save: (id: string, relationship_id: string, version: number, permissions: ShareFlags,
+      history_scope?: HistoryScope, confirm_history_start?: string) =>
+      api<Friend>(path(id) + '/sharing', { method: 'PUT', body: { relationship_id, version, permissions, history_scope, confirm_history_start } }),
     stop: (id: string, relationship_id: string, version: number) => api<Friend>(
       path(id) + '/sharing', { method: 'DELETE', query: { relationship_id, version } },
     ),
