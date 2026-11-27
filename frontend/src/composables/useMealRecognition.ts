@@ -2,7 +2,6 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useAiApi } from '../api/aiRepository'
 import type { AiJob, AiRecoveryQuery } from '../api/aiRepository'
 import { ApiError } from '../api/client'
-import { useDiaryApi } from '../api/diaryRepository'
 import { authMessage, useAuth } from '../stores/auth'
 import { usePrivateQuery } from './usePrivateQuery'
 
@@ -37,9 +36,8 @@ function wait(ms: number, signal: AbortSignal) {
 }
 
 export function useMealRecognition(photos: () => DraftPhoto[], formId: () => string | undefined,
-  restorePhotos: (photos: DraftPhoto[]) => void) {
+  restorePhotos: (photos: DraftPhoto[]) => void, uploadPhoto: (photo: DraftPhoto) => Promise<string>) {
   const api = useAiApi()
-  const diary = useDiaryApi()
   const auth = useAuth()
   const owner = () => auth.currentUser?.public_id
   const cap = usePrivateQuery(owner, (id, signal) => id ? api.capabilities(signal) : Promise.resolve(undefined))
@@ -190,7 +188,7 @@ export function useMealRecognition(photos: () => DraftPhoto[], formId: () => str
       } else if (action === 'start' && cap) {
         const ids: string[] = []
         for (const photo of selected.value) {
-          if (!photo.id && photo.file) photo.id = (await diary.upload(photo.file, signal)).id
+          if (!photo.id && photo.file) await uploadPhoto(photo)
           if (stale()) return
           if (photo.id) ids.push(photo.id)
         }

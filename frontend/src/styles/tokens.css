@@ -45,6 +45,7 @@
 }
 
 :root {
+  --font-hand: "FoodDiary Hand", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
   --space-unit: .125rem;
   --page-width: 76rem;
   --rail-width: 14rem;
@@ -52,4 +53,34 @@
   --tap-size: 2.75rem;
   --paper-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='paper'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' opacity='.12' filter='url(%23paper)'/%3E%3C/svg%3E");
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2345583b' stroke-width='1.5'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+}
+
+:root:has(.api-theme), .api-theme {
+  --color-paper: #f2f2f2;
+  --color-sheet: #fffefc;
+  --color-ink: #222222;
+  --color-muted: #68615b;
+  --color-sage: #8d827a;
+  --color-sage-deep: #111111;
+  --color-leaf: #eeeae5;
+  --color-butter: #f4efe8;
+  --color-apricot: #ded1c6;
+  --color-line: #e9e7e3;
+  --color-text-strong: #45403b;
+  --color-primary-hover: #34302d;
+  --color-earth: #80675a;
+  --color-control-line: #aaa39a;
+  --color-line-leaf: #e1dcd6;
+  --color-leaf-selected: #e8e5e1;
+  --color-leaf-pale: #f4f1ee;
+  --color-canvas-hover: #ece9e5;
+  --color-paper-warm: #f7f4ef;
+  --color-rail: #f2f2f2;
+  --color-sheet-glaze: #fffefce6;
+  --color-backdrop: #26221e66;
+  --diary-ink-soft: #80675a;
+  --diary-detail: #a9a49d;
+  --diary-ghost: #cac2bb;
+  background: var(--color-paper);
+  color: var(--color-ink);
 }

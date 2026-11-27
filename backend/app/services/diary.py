@@ -13,6 +13,8 @@ from app.core.database import utcnow
 from app.core.exceptions import ApiError
 from app.diary_schemas import CalendarDay, CalendarView, DailyView, ItemView, MealInput, MealPage, MealView, MediaView, NutrientSources, NutrientSummary
 from app.models.diary import Meal, MealItem, MealMedia, MealRequest, MediaAsset
+from app.models.stickers import MediaDerivative
+from app.services.catalog import sync_item
 from app.services.meal_sources import estimate_digest, item_values, verify_candidate
 from app.services.storage import MEDIA_MISSING, lock_owner
 
@@ -108,6 +110,9 @@ def update_items(db: Session, settings: Settings, owner: str, identifier: str, d
         if row.ai_original_digest:
             row.source = "ai" if estimate_digest(values) == row.ai_original_digest else "ai_edited"
         db.add(row)
+    db.flush()
+    for row, _ in ordered:
+        sync_item(db, owner, row.id, row.food_name, row.category)
 
 
 def replace_details(db: Session, settings: Settings, owner: str, identifier: str, data: MealInput):
@@ -205,8 +210,11 @@ def calendar(db: Session, owner: str, month: str) -> CalendarView:
     ranking = select(
         Meal.local_date.label("day"), MealMedia.media_id.label("image"),
         func.row_number().over(partition_by=Meal.local_date,
-                              order_by=(Meal.eaten_at.desc(), Meal.id.desc(), MealMedia.sort_order)).label("position"),
-    ).join(MealMedia, MealMedia.meal_id == Meal.id).where(*dates).subquery()
+                              order_by=(MediaDerivative.id.is_not(None).desc(), Meal.eaten_at.desc(), Meal.id.desc(),
+                                        MealMedia.sort_order)).label("position"),
+    ).join(MealMedia, MealMedia.meal_id == Meal.id).outerjoin(
+        MediaDerivative, (MediaDerivative.source_media_id == MealMedia.media_id) & (MediaDerivative.user_id == owner),
+    ).where(*dates).subquery()
     counts = db.execute(select(Meal.local_date, func.count(Meal.id), ranking.c.image)
                         .outerjoin(ranking, (ranking.c.day == Meal.local_date) & (ranking.c.position == 1))
                         .where(*dates).group_by(Meal.local_date, ranking.c.image).order_by(Meal.local_date)).all()

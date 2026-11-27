@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     media_user_bytes: int = Field(default=209_715_200, ge=1)
     media_user_files: int = Field(default=1000, ge=1)
     media_orphan_seconds: int = Field(default=86_400, ge=60)
+    sticker_enabled: bool = False
+    sticker_provider: Literal["onnx", "fake"] = "onnx"
+    sticker_model_dir: Path = Path("data/models/rembg")
+    sticker_edge: int = Field(default=768, ge=256, le=1024)
+    sticker_threads: int = Field(default=1, ge=1, le=2)
+    sticker_timeout_seconds: int = Field(default=25, ge=1, le=120)
+    sticker_min_free_bytes: int = Field(default=536_870_912, ge=0)
+    sticker_pending_per_user: int = Field(default=12, ge=1, le=40)
     ai_enabled: bool = False
     ai_provider: AiProvider = "qwen"
     ai_base_url: str = ""
@@ -113,13 +121,17 @@ class Settings(BaseSettings):
             raise ValueError("Production browser origins require HTTPS")
         if self.app_env == "production" and self.ai_provider == "fake":
             raise ValueError("Production prohibits the fake AI provider")
+        if self.app_env == "production" and self.sticker_provider == "fake":
+            raise ValueError("Production prohibits the fake sticker provider")
         if self.ai_provider == "deepseek" and self.ai_model not in ("", DEEPSEEK_VISION_MODEL):
             raise ValueError("DeepSeek food recognition requires deepseek-flash")
         if self.ai_deepseek_compact_request and (self.ai_provider != "deepseek" or self.ai_max_images != 1
                                                 or self.ai_max_output_tokens > DEEPSEEK_COMPACT_OUTPUT_TOKENS):
             raise ValueError("Compact DeepSeek requests require one image and at most 1024 output tokens")
-        if self.ai_enabled and (self.db_url.get_backend_name() != "sqlite" or self.db_url.database in (None, "", ":memory:")):
-            raise ValueError("AI jobs require a shared SQLite file")
+        if (self.ai_enabled or self.sticker_enabled) and (
+            self.db_url.get_backend_name() != "sqlite" or self.db_url.database in (None, "", ":memory:")
+        ):
+            raise ValueError("Image jobs require a shared SQLite file")
         return self
 
     @property

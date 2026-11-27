@@ -6,11 +6,13 @@ import { ApiError } from '../api/client'
 import { nutrientFields, useDiaryApi } from '../api/diaryRepository'
 import type { MealInput, MealItemInput } from '../api/diaryRepository'
 import type { AiCandidate } from '../api/aiRepository'
+import { stickerRunning } from '../api/stickerRepository'
 import ModalSurface from '../components/ModalSurface.vue'
 import PageHeading from '../components/PageHeading.vue'
 import PrivatePhoto from '../components/PrivatePhoto.vue'
 import { useApiDay } from '../composables/useApiDay'
 import { usePrivateQuery } from '../composables/usePrivateQuery'
+import { useDraftStickers } from '../composables/useDraftStickers'
 import { useMealRecognition } from '../composables/useMealRecognition'
 import type { DraftPhoto } from '../composables/useMealRecognition'
 import { authMessage } from '../stores/auth'
@@ -45,11 +47,47 @@ const emptyDraft = (): Omit<MealInput, 'items'> & { items: DraftItem[] } => ({
 })
 const draft = reactive(emptyDraft())
 const photos = ref<DraftPhoto[]>([])
+const uploadScope = new AbortController()
+const uploads = new Map<string, Promise<string>>()
+let uploadTail = Promise.resolve()
+function uploadPhoto(photo: DraftPhoto): Promise<string> {
+  if (photo.id) return Promise.resolve(photo.id)
+  const pending = uploads.get(photo.key)
+  if (pending) return pending
+  const file = photo.file
+  if (!file) return Promise.reject(new Error('Missing photo'))
+  const task = uploadTail.then(async () => {
+    if (uploadScope.signal.aborted || !photos.value.some(value => value.key === photo.key)) throw new Error('Photo removed')
+    photo.id = (await api.upload(file, uploadScope.signal)).id
+    return photo.id
+  }).finally(() => uploads.delete(photo.key))
+  uploadTail = task.then(() => {}, () => {})
+  uploads.set(photo.key, task)
+  return task
+}
+const { states: stickerStates, enabled: stickersEnabled, online: stickersOnline, simulated: stickersSimulated,
+  auto: autoSticker, run: runSticker, check: checkStickerWorker } = useDraftStickers(() => photos.value, uploadPhoto)
+const cropTarget = ref<DraftPhoto>()
+const cropLabels = { left: '左边距', top: '上边距', width: '宽度', height: '高度' }
+const cropDraft = reactive({ left: 8, top: 8, width: 84, height: 84 })
+const validCrop = computed(() => cropDraft.left >= 0 && cropDraft.top >= 0 && cropDraft.width >= 3 && cropDraft.height >= 3
+  && cropDraft.left + cropDraft.width <= 100 && cropDraft.top + cropDraft.height <= 100)
+function openCrop(photo: DraftPhoto) {
+  Object.assign(cropDraft, { left: 8, top: 8, width: 84, height: 84 })
+  cropTarget.value = photo
+}
+function applyCrop() {
+  const target = cropTarget.value
+  if (!target || !validCrop.value) return
+  const { left, top, width, height } = cropDraft
+  void runSticker(target, 'retry', { left: left / 100, top: top / 100, width: width / 100, height: height / 100 })
+  cropTarget.value = undefined
+}
 const {
   capabilities, capabilityError, maxImages, selected: selectedPhotos, picked, job, candidates, applied, waiting,
   error: recognitionError, jobMessage, dialog, canResume, togglePhoto, run, recovered, canRestore, restore,
   recoveryError, explicitlyRestored, workerOnline, refreshRecovery,
-} = useMealRecognition(() => photos.value, () => identifier.value, value => { photos.value = value })
+} = useMealRecognition(() => photos.value, () => identifier.value, value => { photos.value = value }, uploadPhoto)
 const mayCancel = computed(() => job.value?.status === 'pending' || job.value?.status === 'running')
 const isEmpty = (item: DraftItem) => !item.id && !item.ai_reference && !item.food_name.trim()
   && !item.category?.trim() && !item.note.trim() && Object.keys(fields).every(key => item[key as keyof typeof fields] == null)
@@ -95,6 +133,7 @@ watch(saved, meal => {
 function dispose(photo: DraftPhoto) { if (photo.preview) URL.revokeObjectURL(photo.preview) }
 onScopeDispose(() => {
   active = false
+  uploadScope.abort()
   photos.value.forEach(dispose)
 })
 
@@ -175,7 +214,7 @@ async function submit() {
       index++
       if (photo.id || !photo.file) continue
       progress.value = '正在上传图片 ' + index + ' / ' + photos.value.length
-      photo.id = (await api.upload(photo.file)).id
+      await uploadPhoto(photo)
       if (!active || version !== formVersion) return
     }
     const input = collect()
@@ -233,7 +272,10 @@ function keepAsManual() {
         <input ref="camera" type="file" accept="image/*" capture="environment" hidden @change="choose" />
         <div v-if="photos.length" class="previews" aria-label="上传预览">
           <figure v-for="(photo, index) in photos" :key="photo.key" class="preview">
-            <img v-if="photo.preview" :src="photo.preview" :alt="'待保存的照片 ' + (index + 1)" />
+            <PrivatePhoto v-if="photo.id && stickerStates[photo.key]?.job?.ready && stickerStates[photo.key]?.mode !== 'original'"
+              :id="photo.id" class="preview-sticker" :presentation="stickerStates[photo.key].mode === 'cutout' ? 'cutout' : 'sticker'"
+              :revision="stickerStates[photo.key].job?.result_id" :alt="stickerStates[photo.key].mode === 'cutout' ? '透明抠图' : '美食贴纸'" />
+            <img v-else-if="photo.preview" :src="photo.preview" :alt="'待保存的照片 ' + (index + 1)" />
             <PrivatePhoto v-else-if="photo.id" :id="photo.id" :alt="'已有照片 ' + (index + 1)" />
             <button type="button" class="icon-button remove-image" :aria-label="'移除照片 ' + (index + 1)" :disabled="!!progress" @click="removePhoto(index)"><X /></button>
             <label v-if="capabilities?.available" class="photo-choice">
@@ -242,6 +284,21 @@ function keepAsManual() {
                 :aria-label="'识别照片 ' + (index + 1)"
                 @change="togglePhoto(photo.key, ($event.target as HTMLInputElement).checked)" /> 参与识别
             </label>
+            <figcaption v-if="stickersEnabled" class="sticker-controls">
+              <p v-if="stickerStates[photo.key]?.busy || stickerRunning(stickerStates[photo.key]?.job)" role="status"><LoaderCircle class="spin" aria-hidden="true" /> 正在制作你的美食贴纸…</p>
+              <p v-else-if="stickerStates[photo.key]?.error || stickerStates[photo.key]?.job?.status === 'failed'" role="status">这次没能完整取出食物，可以先使用原图。</p>
+              <p v-else-if="stickerStates[photo.key]?.job?.ready" role="status">{{ stickerStates[photo.key]?.job?.manual ? '手动裁剪已保存。' : '美食贴纸做好啦。' }}</p>
+              <div v-if="stickerStates[photo.key]?.job?.ready" class="sticker-modes" aria-label="图片预览方式">
+                <button v-for="mode in (['original', 'cutout', 'sticker'] as const)" :key="mode" type="button" class="text-action"
+                  :aria-pressed="stickerStates[photo.key].mode === mode" @click="stickerStates[photo.key].mode = mode">{{ { original: '原图', cutout: '抠图', sticker: '贴纸' }[mode] }}</button>
+              </div>
+              <button v-if="stickerRunning(stickerStates[photo.key]?.job)" type="button" class="text-action" @click="runSticker(photo, 'cancel')">取消制作</button>
+              <div v-else-if="stickersOnline && !stickerStates[photo.key]?.busy" class="sticker-modes">
+                <button v-if="stickerStates[photo.key]?.job" type="button" class="text-action" @click="runSticker(photo, 'retry')">重新生成</button>
+                <button v-else type="button" class="text-action" @click="runSticker(photo, 'make')">制作贴纸</button>
+                <button v-if="photo.id && stickerStates[photo.key]?.job" type="button" class="text-action" @click="openCrop(photo)">手动裁剪</button>
+              </div>
+            </figcaption>
           </figure>
         </div>
         <p class="caption">JPEG、PNG 或 WebP，每餐最多 5 张，每张不超过 10 MiB。</p>
@@ -250,6 +307,11 @@ function keepAsManual() {
           <button type="button" class="button" :disabled="!!progress || photos.length >= 5" @click="camera?.click()"><Camera /> 拍一张</button>
         </div>
         <p v-if="!photos.length" class="caption">也可以只填写食物信息。</p>
+        <div v-if="stickersEnabled" class="sticker-options">
+          <label><input v-model="autoSticker" type="checkbox" /> 自动制作贴纸</label>
+          <span v-if="stickersSimulated" class="caption">模拟抠图</span>
+          <button v-if="!stickersOnline" class="text-action" type="button" @click="checkStickerWorker">贴纸暂不可用 · 检查状态</button>
+        </div>
         <div v-if="recovered" class="recognition form-stack">
           <p class="caption" role="status">{{ ['pending', 'running'].includes(recovered.status) ? '有一项识别尚未完成。' : '找到了上次的识别任务。' }}</p>
           <p v-if="!canRestore" class="caption">当前餐次或照片与上次不匹配，恢复前请核对。</p>
@@ -336,6 +398,19 @@ function keepAsManual() {
         <button v-if="identifier && error" class="text-action" @click="lookup.reload()">重新读取服务端记录</button>
       </section>
     </form>
+    <ModalSurface :open="!!cropTarget" title="手动裁剪照片" @close="cropTarget = undefined">
+      <div v-if="cropTarget" class="form-stack">
+        <div class="crop-preview">
+          <img v-if="cropTarget.preview" :src="cropTarget.preview" alt="待裁剪原图" />
+          <PrivatePhoto v-else-if="cropTarget.id" :id="cropTarget.id" original natural alt="待裁剪原图" />
+          <div class="crop-box" :style="{ left: cropDraft.left + '%', top: cropDraft.top + '%', width: cropDraft.width + '%', height: cropDraft.height + '%' }"></div>
+        </div>
+        <label v-for="(label, key) in cropLabels" :key="key" class="field">
+          {{ label }}（%）<input v-model.number="cropDraft[key]" type="number" :min="key === 'width' || key === 'height' ? 3 : 0" max="100" />
+        </label>
+        <button type="button" class="button button-primary" :disabled="!validCrop" @click="applyCrop">使用裁剪</button>
+      </div>
+    </ModalSurface>
     <ModalSurface :open="!!dialog" :title="dialog === 'retry' ? '再试一次识别' : '用照片识别食物'" @close="dialog = undefined">
       <p v-if="capabilities?.simulated">本地模拟会使用示例结果，所选照片将留在本地测试环境。</p>
       <template v-else>
@@ -358,8 +433,19 @@ function keepAsManual() {
 h2, legend { font: 700 1.17rem var(--font-serif); }
 fieldset { min-width: 0; }
 .previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
-.preview { position: relative; margin: 0; min-width: 0; aspect-ratio: 4/3; border: 4px solid var(--color-sheet); border-radius: var(--radius-small); background: var(--color-canvas-hover); }
-.preview img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius-small); }
+.preview { position: relative; margin: 0; min-width: 0; border: 4px solid var(--color-sheet); border-radius: var(--radius-small); background: var(--color-canvas-hover); overflow: hidden; }
+.preview > img, .preview > .private-photo { width: 100%; height: auto; aspect-ratio: 4/3; object-fit: cover; border-radius: var(--radius-small); }
+.preview > .preview-sticker { background: #f7f4ef; }
+.sticker-controls { padding: .34rem .38rem; font-size: .74rem; display: grid; gap: .18rem; align-content: start; }
+.sticker-controls p { display: flex; align-items: center; gap: .15rem; }
+.sticker-controls svg { width: .75rem; height: .75rem; flex: none; }
+.sticker-modes, .sticker-options { display: flex; flex-wrap: wrap; align-items: center; gap: .44rem; }
+.sticker-modes .text-action { min-height: 1.6rem; padding: .08rem .18rem; font-size: .73rem; }
+.sticker-modes [aria-pressed="true"] { text-decoration: underline; text-underline-offset: .18rem; }
+.crop-preview { position: relative; }
+.crop-preview > img { width: 100%; height: auto; display: block; }
+.crop-box { position: absolute; border: 2px dashed white; box-shadow: 0 0 0 1px #111, 0 0 0 60vmax #0005; pointer-events: none; }
+.crop-preview { overflow: hidden; }
 .remove-image { position: absolute; right: .2rem; top: .2rem; z-index: 1; }
 .photo-choice { position: absolute; inset: auto auto .2rem .2rem; display: flex; align-items: center; gap: .3rem; min-height: 1.7rem; padding: .15rem .4rem; background: var(--color-sheet); border-radius: var(--radius-small); font-size: .78rem; }
 .photo-choice input { accent-color: var(--color-sage-deep); }

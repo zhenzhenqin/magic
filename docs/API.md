@@ -74,3 +74,9 @@
 - 创建时可提交本人正在编辑的 `form_meal_id`。任务视图返回完整校验后的有序 `media_ids`、`form_meal_id` 和 `worker_online`。识别能力也返回 `worker_online`，独立于配置可用性。
 - 真实百炼累计耗尽时返回 429 和 `ai_cumulative_limit`。用量接口以 `exhausted_reason` 区分每日与累计限制。取消和查询仍按所属账号可用。
 - 新采用 AI 候选时，餐次须保有原识别图片并匹配任务编辑上下文。违反时返回 422 和 `ai_candidate_context`。日报附加 `nutrition_sources`，原 `nutrition` 的未知值、零值和完整性契约保持。
+
+## 阶段 5 本地贴纸与图鉴
+
+`GET /api/v1/stickers/capabilities` 返回配置、Worker 可用性及模拟标记。`POST /api/v1/stickers/jobs` 接受 `media_id`，可选 `crop`，返回持久任务。`GET /stickers/sources/{media_id}` 或 `GET /stickers/jobs/{id}` 查询状态。`POST /stickers/jobs/{id}/retry` 和 `POST /stickers/jobs/{id}/cancel` 重新生成或取消。原图 ID 下的 `/media/{id}/sticker`、`/sticker/thumbnail`、`/sticker/cutout` 返回经过授权的 WebP。
+
+`GET /api/v1/catalog` 支持 `page`、`limit`、`category`、`search`、`favorites` 和 `sort`。`GET /catalog/{id}` 取详情，`/catalog/{id}/history` 分页取历史，`PATCH /catalog/{id}` 修改显示偏好，`POST /catalog/merge` 事务合并。除首个前缀示例，以上路径均相对于 `/api/v1`。

@@ -1,0 +1,5 @@
+# Install into the separate Sticker Worker environment with requirements.txt.
+numpy==2.4.1
+onnxruntime==1.26.0
+flatbuffers==25.12.19
+protobuf==6.33.4

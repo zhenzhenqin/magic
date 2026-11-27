@@ -21,7 +21,7 @@ watch(() => auth.isAuthenticated, signedIn => {
 <template>
   <main v-if="auth.isInitializing && !route.name" class="session-loading" aria-live="polite">正在打开 FoodDiary…</main>
   <AppShell v-else-if="route.meta.requiresAuth && account" :key="account.id" :account="account" />
-  <RouterView v-else-if="!route.meta.requiresAuth" />
+  <div v-else-if="!route.meta.requiresAuth" class="api-theme"><RouterView /></div>
 </template>
 
 <style scoped>

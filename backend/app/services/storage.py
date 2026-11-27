@@ -7,7 +7,7 @@ from threading import BoundedSemaphore
 from uuid import uuid4
 
 from PIL import Image, ImageOps, UnidentifiedImageError
-from sqlalchemy import delete, exists, func, select, update
+from sqlalchemy import delete, exists, func, inspect, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -16,8 +16,9 @@ from app.core.exceptions import ApiError
 from app.models import User
 from app.models.ai import AiJob, AiJobMedia
 from app.models.diary import MealMedia, MediaAsset
+from app.models.stickers import MediaDerivative, StickerJob
 
-FILE_KEY = re.compile(r"(originals|thumbnails|staging)/[0-9a-f]{32}(?:-(?:original|thumbnail))?\.webp")
+FILE_KEY = re.compile(r"(?:originals|thumbnails|staging|stickers)/[0-9a-f]{32}(?:-(?:original|thumbnail|sticker|sticker-thumb|cutout))?\.webp")
 SUPPORTED = ("JPEG", "PNG", "WEBP")
 MEDIA_MISSING = "图片不存在或不可访问。"
 
@@ -44,6 +45,30 @@ def used_by_ai(media_id, now):
         ((AiJob.status == "pending") & (AiJob.expires_at > now))
         | ((AiJob.status == "running") & ((AiJob.lease_until > now) | (AiJob.expires_at > now))),
     )
+
+
+def used_by_stickers(media_id, now):
+    return exists().where(StickerJob.source_media_id == media_id,
+                          ((StickerJob.status == "pending") & (StickerJob.updated_at > now - timedelta(days=1)))
+                          | (StickerJob.lease_until > now))
+
+
+def storage_usage(db, owner):
+    count, size = db.execute(select(
+        func.count(MediaAsset.id), func.coalesce(func.sum(MediaAsset.size_bytes + MediaAsset.thumbnail_size_bytes), 0),
+    ).where(MediaAsset.user_id == owner)).one()
+    if not inspect(db.connection()).has_table(MediaDerivative.__tablename__):
+        return count, size
+    derived_count, derived_size = db.execute(select(
+        func.count(MediaDerivative.id), func.coalesce(func.sum(MediaDerivative.size_bytes), 0),
+    ).where(MediaDerivative.user_id == owner)).one()
+    return count + derived_count * 3, size + derived_size
+
+
+def derivative_keys(db, media_id):
+    row = db.execute(select(MediaDerivative.storage_key, MediaDerivative.cutout_key, MediaDerivative.thumbnail_key)
+                     .where(MediaDerivative.source_media_id == media_id)).first()
+    return tuple(row) if row else ()
 
 
 class LocalStorageProvider:
@@ -121,9 +146,7 @@ class LocalStorageProvider:
             with original_file.open("rb") as source:
                 digest = file_digest(source, "sha256").hexdigest()
             lock_owner(db, owner)
-            count, byte_sum = db.execute(select(
-                func.count(MediaAsset.id), func.coalesce(func.sum(MediaAsset.size_bytes + MediaAsset.thumbnail_size_bytes), 0),
-            ).where(MediaAsset.user_id == owner)).one()
+            count, byte_sum = storage_usage(db, owner)
             if count >= self.settings.media_user_files or byte_sum + size + thumb_size > self.settings.media_user_bytes:
                 raise ApiError(413, "media_quota", "图片存储额度已用完。")
             asset = MediaAsset(id=str(identifier), user_id=owner, original_key=original, thumbnail_key=thumbnail,
@@ -156,7 +179,9 @@ class LocalStorageProvider:
             raise ApiError(409, "media_in_use", "请先从用餐记录中移除这张图片。")
         if db.scalar(select(used_by_ai(asset.id, utcnow()))):
             raise ApiError(409, "media_in_ai_use", "这张照片正在识别，请先取消或等待任务结束。")
-        keys = asset.original_key, asset.thumbnail_key
+        if db.scalar(select(used_by_stickers(asset.id, utcnow()))):
+            raise ApiError(409, "media_in_sticker_use", "这张照片正在制作贴纸，请先取消或等待任务结束。")
+        keys = (asset.original_key, asset.thumbnail_key, *derivative_keys(db, asset.id))
         db.delete(asset)
         db.commit()
         self.discard(*keys)
@@ -166,7 +191,7 @@ class LocalStorageProvider:
         cutoff = now - timedelta(seconds=self.settings.media_orphan_seconds)
         rows = db.execute(select(MediaAsset.id, MediaAsset.user_id).where(
             MediaAsset.status == "draft", MediaAsset.updated_at < cutoff, ~referenced(MediaAsset.id),
-            ~used_by_ai(MediaAsset.id, now),
+            ~used_by_ai(MediaAsset.id, now), ~used_by_stickers(MediaAsset.id, now),
         )).all()
         db.rollback()
         removed_assets = 0
@@ -178,9 +203,10 @@ class LocalStorageProvider:
             asset = db.scalar(select(MediaAsset).where(
                 MediaAsset.id == media_id, MediaAsset.user_id == owner, MediaAsset.status == "draft",
                 MediaAsset.updated_at < cutoff, ~referenced(MediaAsset.id), ~used_by_ai(MediaAsset.id, utcnow()),
+                ~used_by_stickers(MediaAsset.id, utcnow()),
             ))
             if asset:
-                keys = asset.original_key, asset.thumbnail_key
+                keys = (asset.original_key, asset.thumbnail_key, *derivative_keys(db, asset.id))
                 db.execute(delete(MediaAsset).where(MediaAsset.id == media_id))
                 db.commit()
                 self.discard(*keys)
@@ -189,7 +215,7 @@ class LocalStorageProvider:
                 db.rollback()
 
         orphan_files = 0
-        for folder in ("originals", "thumbnails", "staging"):
+        for folder in ("originals", "thumbnails", "staging", "stickers"):
             directory = self.root / folder
             if not directory.is_dir() or directory.resolve() != directory:
                 continue
@@ -204,6 +230,10 @@ class LocalStorageProvider:
                     continue
                 if db.scalar(select(MediaAsset.id).where(
                     (MediaAsset.original_key == key) | (MediaAsset.thumbnail_key == key),
+                )):
+                    continue
+                if db.scalar(select(MediaDerivative.id).where(
+                    (MediaDerivative.storage_key == key) | (MediaDerivative.cutout_key == key) | (MediaDerivative.thumbnail_key == key),
                 )):
                     continue
                 orphan_files += 1

@@ -11,8 +11,9 @@ const api = 'http://127.0.0.1:' + backendPort
 const fakeAi = process.env.FOODDIARY_BROWSER_FAKE_AI === '1'
 const phase41 = process.env.FOODDIARY_BROWSER_PHASE41 === '1'
 const offline = process.env.FOODDIARY_BROWSER_AI_OFFLINE === '1'
-const suite = phase41 ? 'phase-4.1-ai' : fakeAi ? 'phase-4-ai' : 'phase-2-api'
-const flags = [fakeAi && '--fake-ai', phase41 && '--phase-41', offline && '--no-ai-worker'].filter(Boolean).join(' ')
+const stickers = process.env.FOODDIARY_BROWSER_STICKERS === '1'
+const suite = stickers ? 'phase-5-stickers' : phase41 ? 'phase-4.1-ai' : fakeAi ? 'phase-4-ai' : 'phase-2-api'
+const flags = [fakeAi && '--fake-ai', phase41 && '--phase-41', offline && '--no-ai-worker', stickers && '--fake-stickers'].filter(Boolean).join(' ')
 
 export default defineConfig({
   testDir: './tests',

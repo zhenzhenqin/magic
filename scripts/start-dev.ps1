@@ -4,7 +4,8 @@ param(
     [string]$DevEnvRoot = 'D:\DevEnv',
     [int]$FrontendPort = 5173,
     [int]$BackendPort = 8000,
-    [switch]$WithAiWorker
+    [switch]$WithAiWorker,
+    [switch]$WithStickerWorker
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,15 +22,22 @@ if ($Mode -eq 'Demo') {
 Assert-FreeLocalPort -Port $BackendPort
 if (-not (Test-Path -LiteralPath $python)) { throw 'Run setup-backend.ps1 -Action Install first.' }
 
-$names = 'PIP_CACHE_DIR','TEMP','TMP','TMPDIR','PIP_DISABLE_PIP_VERSION_CHECK','PIP_CONFIG_FILE','PIP_TARGET','PIP_PREFIX','PIP_USER','PIP_ROOT','JWT_SECRET','APP_ORIGINS'
+$names = 'PIP_CACHE_DIR','TEMP','TMP','TMPDIR','PIP_DISABLE_PIP_VERSION_CHECK','PIP_CONFIG_FILE','PIP_TARGET','PIP_PREFIX','PIP_USER','PIP_ROOT','JWT_SECRET','APP_ORIGINS','STICKER_ENABLED','STICKER_MODEL_DIR'
 $previous = @{}
 foreach ($name in $names) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 
 $process = $null
 $worker = $null
+$stickerWorker = $null
 try {
     Initialize-BackendEnvironment -Root $root -CacheRoot $DevEnvRoot
     Initialize-LocalDatabase -Root $root -FrontendPort $FrontendPort
+    if ($WithStickerWorker) {
+        $stickerPython = Join-Path $DevEnvRoot 'fooddiary-phase5/worker/Scripts/python.exe'
+        if (-not (Test-Path -LiteralPath $stickerPython)) { throw 'Prepare the local Sticker Worker first.' }
+        $env:STICKER_ENABLED = 'true'
+        $env:STICKER_MODEL_DIR = Join-Path $DevEnvRoot 'models/rembg'
+    }
     $stamp = [guid]::NewGuid().ToString('N')
     $stdout = Join-Path $backend "logs/dev-$stamp.out.log"
     $stderr = Join-Path $backend "logs/dev-$stamp.err.log"
@@ -52,9 +60,16 @@ try {
         $worker = Start-Process -FilePath $python -ArgumentList @('-m','app.ai_worker') -WorkingDirectory $backend -WindowStyle Hidden -RedirectStandardOutput $workerOut -RedirectStandardError $workerErr -PassThru
         "FoodDiary AI worker log: $workerErr"
     }
+    if ($WithStickerWorker) {
+        $stickerOut = Join-Path $backend "logs/sticker-$stamp.out.log"
+        $stickerErr = Join-Path $backend "logs/sticker-$stamp.err.log"
+        $stickerWorker = Start-Process -FilePath $stickerPython -ArgumentList @('-m','app.sticker_worker') -WorkingDirectory $backend -WindowStyle Hidden -RedirectStandardOutput $stickerOut -RedirectStandardError $stickerErr -PassThru
+        "FoodDiary sticker worker log: $stickerErr"
+    }
     & $frontendScript -Action Dev -Mode Api -Port $FrontendPort -BackendPort $BackendPort -DevEnvRoot $DevEnvRoot
 }
 finally {
+    if ($stickerWorker -and -not $stickerWorker.HasExited) { Stop-Process -InputObject $stickerWorker }
     if ($worker -and -not $worker.HasExited) { Stop-Process -InputObject $worker }
     if ($process -and -not $process.HasExited) { Stop-Process -InputObject $process }
     foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process') }

@@ -12,6 +12,7 @@ from app.core.exceptions import ApiError, ProblemResponse
 from app.dependencies import CurrentUser, Database
 from app.diary_schemas import MediaView
 from app.services.storage import MEDIA_MISSING, owned_media
+from app.services.stickers import derivative
 
 router = APIRouter(prefix="/media", tags=["私有图片"], responses={
     401: {"model": ProblemResponse}, 404: {"model": ProblemResponse}, 413: {"model": ProblemResponse},
@@ -89,6 +90,35 @@ def original(request: Request, db: Database, user: CurrentUser, media_id: UUID):
 @router.get("/{media_id}/thumbnail", response_class=FileResponse, responses=IMAGE_CONTENT)
 def thumbnail(request: Request, db: Database, user: CurrentUser, media_id: UUID):
     return image_response(request, db, user, media_id, True)
+
+
+def sticker_response(request, db, user, media_id, variant):
+    asset = derivative(db, user.id, str(media_id))
+    if not asset:
+        raise ApiError(404, "sticker_not_found", "美食贴纸不存在或不可访问。")
+    try:
+        path = request.app.state.storage.path(getattr(asset, variant))
+    except ValueError:
+        raise ApiError(404, "sticker_not_found", "美食贴纸不存在或不可访问。") from None
+    if not path.is_file():
+        raise ApiError(404, "sticker_not_found", "美食贴纸不存在或不可访问。")
+    return FileResponse(path, media_type=asset.content_type,
+                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/{media_id}/sticker", response_class=FileResponse, responses=IMAGE_CONTENT)
+def sticker(request: Request, db: Database, user: CurrentUser, media_id: UUID):
+    return sticker_response(request, db, user, media_id, "storage_key")
+
+
+@router.get("/{media_id}/sticker/thumbnail", response_class=FileResponse, responses=IMAGE_CONTENT)
+def sticker_thumbnail(request: Request, db: Database, user: CurrentUser, media_id: UUID):
+    return sticker_response(request, db, user, media_id, "thumbnail_key")
+
+
+@router.get("/{media_id}/sticker/cutout", response_class=FileResponse, responses=IMAGE_CONTENT)
+def sticker_cutout(request: Request, db: Database, user: CurrentUser, media_id: UUID):
+    return sticker_response(request, db, user, media_id, "cutout_key")
 
 
 @router.delete("/{media_id}", status_code=204, responses={409: {"model": ProblemResponse}})

@@ -12,9 +12,9 @@ export const routes: RouteRecordRaw[] = [
   { path: '/me', name: 'profile', meta: { requiresAuth: true }, component: () => import('../pages/ApiProfilePage.vue') },
   { path: '/', name: 'diary', meta: { requiresAuth: true }, component: () => import('../pages/ApiDiaryPage.vue') },
   { path: '/calendar', name: 'calendar', meta: { requiresAuth: true }, component: () => import('../pages/ApiCalendarPage.vue') },
+  { path: '/catalog', name: 'catalog', meta: { requiresAuth: true }, component: () => import('../pages/ApiCatalogPage.vue') },
   { path: '/capture', name: 'capture', meta: { requiresAuth: true }, component: () => import('../pages/ApiMealForm.vue') },
   ...[
-    ['/catalog', 'catalog', '美食图鉴'],
     ['/friends', 'friends', '饭搭子'],
     ['/friends/:pathMatch(.*)*', 'friend-pages', '饭搭子'],
     ['/me/stats', 'stats', '饮食统计'],

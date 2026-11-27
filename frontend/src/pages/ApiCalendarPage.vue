@@ -39,7 +39,7 @@ const dates = computed(() => Array.from(
         <RouterLink v-for="(date, index) in dates" :key="date" class="day" :class="{ today: date === today }"
           :to="{ name: 'diary', query: { date } }" :aria-label="date + (stats.has(date) ? ' 有记录' : '')">
           <time :datetime="date">{{ index + 1 }}</time>
-          <PrivatePhoto v-if="stats.get(date)?.representative_media_id" :id="stats.get(date)!.representative_media_id!" class="calendar-thumb" alt="" />
+          <PrivatePhoto v-if="stats.get(date)?.representative_media_id" :id="stats.get(date)!.representative_media_id!" class="calendar-thumb" presentation="thumbnail" alt="" />
           <span v-if="stats.has(date)" class="caption day-count">{{ stats.get(date)?.meal_count }} 笔</span>
         </RouterLink>
       </div>
@@ -60,7 +60,7 @@ const dates = computed(() => Array.from(
 .day:hover { background: var(--color-sheet-glaze); }
 .day.today { background: var(--color-leaf); }
 .day time { font: 700 1rem var(--font-editorial); }
-.calendar-thumb { border: 2px solid var(--color-sheet); width: min(92%, 4.25rem); height: auto; transform: rotate(-3deg); }
+.calendar-thumb { width: min(92%, 4.25rem); height: clamp(1.4rem, 4vw, 3.25rem); }
 .day-count { font-size: .72rem; }
 footer { justify-content: center; margin-top: .6rem; }
 @media (max-width: 480px) { .calendar-paper { padding: .52rem; } }

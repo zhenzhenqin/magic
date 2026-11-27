@@ -1,5 +1,7 @@
 # FoodDiary 数据库
 
+阶段 5 的 `0007_stickers_catalog` 增加 `sticker_jobs`、`sticker_runtime`、`media_derivatives`、`food_catalog`、`catalog_names` 与 `catalog_links`。迁移用原有 `meal_items` 回填图鉴，保留现有明细 ID 和识别来源。用户与媒体使用复合外键，派生文件及任务随原图行删除。 [图鉴数据规则](CATALOG.md)
+
 开发使用 SQLite 和同步 SQLAlchemy 2.x。默认 `DATABASE_URL=sqlite:///data/fooddiary.db` 的相对路径从 `backend/` 解析，实际开发文件为 `D:/桌面/mjc/fooddiary/backend/data/fooddiary.db`。每个 SQLite 连接启用外键约束，文件库使用 WAL，忙等待上限 5 秒。
 
 | 表 | 主键、约束与字段 |

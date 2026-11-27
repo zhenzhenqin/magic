@@ -21,6 +21,16 @@ API 模式提供真实账户、个人手账、饮食月历、每日摘要及私�
 
 默认开发库和私有照片位于 `backend/data/fooddiary.db` 与 `backend/data/media`。未提供 `.env` 或进程密钥时，脚本为本地开发生成随机密钥。自定义配置参照 `.env.example`，实际 `JWT_SECRET` 只能进入忽略文件或进程环境。已有库可以运行 Alembic 增量迁移。
 
+### 开启本地贴纸
+
+```powershell
+.\scripts\setup-sticker-worker.ps1 -Action Install
+.\scripts\setup-backend.ps1 -Action Migrate
+.\scripts\start-dev.ps1 -WithStickerWorker
+```
+
+阶段 5 的真实模式使用黑白纸质手账、食物剪贴和个人图鉴。贴纸 Worker 和模型缓存位于 D 盘。普通启动支持原图记录，外部 AI Worker 可单独启用。 [贴纸使用说明](docs/STICKERS.md) · [图鉴规则](docs/CATALOG.md) · [阶段报告](docs/PHASE-5.md)
+
 ### 开启食物识别
 
 在对应地域的阿里云百炼工作空间创建 API Key。在仓库根目录的忽略文件 `.env` 或后端进程环境设置 `AI_ENABLED=true`、`AI_PROVIDER=qwen`、`AI_BASE_URL`、`AI_API_KEY` 和 `AI_MODEL=qwen3-vl-flash`。Base URL 使用工作空间的 OpenAI 兼容地址，结尾为 `/compatible-mode/v1`。若新建 `.env`，同时使用现有开发 `JWT_SECRET`，或为独立开发库生成新的高熵密钥。启动前确认 `APP_ORIGINS` 对应实际端口。[百炼 API Key 指引](https://www.alibabacloud.com/help/en/model-studio/get-api-key)

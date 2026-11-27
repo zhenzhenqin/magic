@@ -13,6 +13,8 @@
 | 图片存储 | 私有本地文件系统，预留对象存储接口 | 起步组件较少。项目需验证访问授权、备份恢复和真实图片存储增长 |
 | 部署 | Docker Compose + Nginx，结合试运行确定部署位置 | 现有主机 Compose 可用，旧业务停服后 80/443 空闲、可用内存约 1.5 GiB。阶段 8 依据压测、安全支持、入口和运维授权确定部署方案 |
 
+阶段 5 采用 rembg 发布的 u2netp 权重，使用独立的 ONNX Runtime CPU 与 Pillow 处理环境。关闭 ONNX 内存池以降低驻留和推理峰值，维持单任务并发。原创建牌与黑白控件搭配暖白纸页和开源手写字体子集。 [实际测量](PHASE-5.md)
+
 版本依据。[Vite 8 发布说明](https://vite.dev/blog/announcing-vite8) · [Capacitor 8 环境要求](https://capacitorjs.com/docs/getting-started/environment-setup) · [Capacitor 8 Android 迁移指南](https://capacitorjs.com/docs/updating/8-0) · [MySQL LTS 说明](https://dev.mysql.com/doc/refman/8.4/en/mysql-releases.html) · [rembg 依赖与平台配置](https://github.com/danielgatis/rembg/blob/main/pyproject.toml)
 
 ## 阶段 1

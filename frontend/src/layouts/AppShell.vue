@@ -18,7 +18,7 @@ const isActive = (section: string[]) => section.some(path => route.path === path
 
 <template>
   <a href="#main" class="skip-link">跳转到主要内容</a>
-  <div class="app-frame">
+  <div class="app-frame" :class="{ 'api-theme': !demo }">
     <aside class="rail">
       <RouterLink to="/" class="brand" aria-label="FoodDiary 美食手账">
         <span class="brand-mark"><Sprout aria-hidden="true" /></span>
@@ -26,11 +26,18 @@ const isActive = (section: string[]) => section.some(path => route.path === path
       </RouterLink>
       <nav class="navigation" aria-label="主导航">
         <RouterLink v-for="item in navigation" :key="item.to" :to="item.to"
-          class="nav-link" :class="{ 'nav-active': isActive(item.section), 'nav-camera': item.to === '/capture' }"
+          class="nav-link" :class="{ 'nav-active': isActive(item.section), 'nav-camera': item.to === '/capture', 'nav-secondary': item.to === '/friends' || item.to === '/me' }"
           :aria-current="isActive(item.section) ? 'page' : undefined">
-          <span class="nav-icon"><component :is="item.icon" aria-hidden="true" /></span>
+          <span class="nav-icon" aria-hidden="true">
+            <i v-if="!demo && item.to === '/capture'" class="capture-mark"></i>
+            <component v-else :is="item.icon" />
+          </span>
           <span>{{ item.label }}</span>
         </RouterLink>
+        <div v-if="!demo" class="mobile-tools mobile-secondary">
+          <RouterLink to="/friends" class="mobile-account" aria-label="饭搭子"><HeartHandshake aria-hidden="true" /><span>饭搭子</span></RouterLink>
+          <RouterLink to="/me" class="mobile-account" aria-label="我的"><UserRound aria-hidden="true" /><span>我的</span></RouterLink>
+        </div>
       </nav>
       <RouterLink to="/me" class="rail-account" :aria-label="demo ? '当前演示账号' : '当前账号'">
         <AvatarBadge :user="account" size="small" />
@@ -41,7 +48,7 @@ const isActive = (section: string[]) => section.some(path => route.path === path
       <RouterLink to="/" class="brand" aria-label="FoodDiary 美食手账">
         <span class="brand-mark"><Sprout aria-hidden="true" /></span><span>FoodDiary</span>
       </RouterLink>
-      <RouterLink to="/me" class="mobile-account" :aria-label="(demo ? '演示账号 ' : '当前账号 ') + account.nickname">
+      <RouterLink v-if="demo" to="/me" class="mobile-account" :aria-label="'演示账号 ' + account.nickname">
         <AvatarBadge :user="account" size="small" />
       </RouterLink>
     </header>
@@ -75,6 +82,13 @@ const isActive = (section: string[]) => section.some(path => route.path === path
 .workspace { margin-left: var(--rail-width); }
 .page-shell { width: 100%; max-width: var(--page-width); margin-inline: auto; padding: calc(var(--space-unit) * 20.8) clamp(calc(var(--space-unit) * 12), 4.1vw, calc(var(--space-unit) * 35.2)) calc(var(--space-unit) * 24); }
 .mobile-header { display: none; }
+.mobile-secondary { display: none; }
+.api-theme .brand-mark { transform: none; border-radius: .7rem .7rem .7rem .2rem; }
+.api-theme .brand-mark svg { transform: none; }
+.capture-mark { position: relative; display: block; width: 1.04rem; height: .77rem; border: 1.5px solid currentColor; border-radius: .27rem .27rem .34rem .27rem; }
+.capture-mark::before { position: absolute; content: ""; inset: 50% auto auto 50%; width: .37rem; height: .37rem; border: 1.3px solid currentColor; border-radius: 50%; transform: translate(-50%,-50%); }
+.capture-mark::after { position: absolute; content: ""; width: .31rem; border-top: 1.5px solid currentColor; left: .11rem; top: -.21rem; }
+.api-theme .workspace .page-shell { max-width: 66rem; }
 @media (max-width: 900px) {
   .rail { display: contents; }
   .rail > .brand, .rail-account { display: none; }
@@ -91,5 +105,16 @@ const isActive = (section: string[]) => section.some(path => route.path === path
   .nav-camera .nav-icon { color: var(--color-sheet); background: var(--color-sage-deep); padding: calc(var(--space-unit) * 4.4) calc(var(--space-unit) * 5.2); border-radius: var(--radius-card); margin-top: -calc(var(--space-unit) * 6.8); }
   .nav-camera .nav-icon svg { width: 1.25rem; height: 1.25rem; }
   .page-shell { padding: calc(var(--space-unit) * 8) max(calc(var(--space-unit) * 8.8), env(safe-area-inset-right)) calc(var(--mobile-nav-height) + env(safe-area-inset-bottom) + calc(var(--space-unit) * 10.4)) max(calc(var(--space-unit) * 8.8), env(safe-area-inset-left)); }
+  .api-theme .mobile-header { position: sticky; top: 0; z-index: 3; background-color: var(--color-paper); padding-inline: max(.95rem, env(safe-area-inset-left)) max(.95rem, env(safe-area-inset-right)); border-bottom: 1px solid var(--color-line); }
+  .api-theme .mobile-secondary { display: flex; position: fixed; top: max(.7rem, env(safe-area-inset-top)); right: max(.95rem, env(safe-area-inset-right)); gap: .4rem; align-items: center; }
+  .api-theme .mobile-account { display: inline-flex; align-items: center; justify-content: center; gap: .3rem; font-size: .72rem; padding-inline: .2rem; }
+  .mobile-account svg { width: 1.05rem; height: 1.05rem; stroke-width: 1.6; }
+  .api-theme .navigation { grid-template-columns: 1fr 1.2fr 1fr; background: #f9f8f6; }
+  .api-theme .nav-secondary { display: none; }
+  .api-theme .nav-camera { order: 2; min-height: 3.15rem; width: min(100%, 6rem); margin-inline: auto; color: #fffefc; background: #111; border-radius: 1.24rem; flex-direction: row; gap: .35rem; }
+  .api-theme .nav-camera .nav-icon { background: none; padding: 0; margin: 0; }
+  .api-theme .nav-camera:active { transform: scale(.94); }
+  .api-theme .nav-link[href="/catalog"] { order: 3; }
+  .api-theme .page-shell { padding-top: .65rem; }
 }
 </style>

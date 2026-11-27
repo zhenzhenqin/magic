@@ -59,3 +59,5 @@ def test_upgrade_from_diary_preserves_rows_media_session_and_old_request_key(set
         assert (item["id"], item["calories_kcal"], item["source"], item["ai_job_id"]) == (food_id, 80.25, "manual", None)
         assert same.json()["media"][0]["id"] == media
         assert new.get(API + "/media/" + media, headers=auth).content == image.content
+        catalog = new.get(API + "/catalog", headers=auth).json()
+        assert catalog["collected"] == 1 and catalog["items"][0]["display_name"] == "饭团"
