@@ -307,8 +307,10 @@ test('@screenshots 真实手账、表单、月历、详情与隔离账号', asyn
   await expect(mealButton(page, '日式咖喱饭').locator('img').first()).toBeVisible()
   await capture(page, '08-mobile')
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.getByText('展开营养数据', { exact: true }).click()
-  await expect(page.getByText('470 kcal')).toBeVisible()
+  const summary = page.getByText('展开营养数据', { exact: true })
+  const nutrition = page.locator('details').filter({ has: summary })
+  await summary.click()
+  await expect(nutrition.getByText('470 kcal')).toBeVisible()
   await capture(page, '09-account-a')
   const second = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 } })
   try {
