@@ -1,95 +1,79 @@
-# FoodDiary 阶段 4.2 联调预检查报告
+# FoodDiary 阶段 4.2 DeepSeek 适配与联调报告
 
-## 一、阶段完成情况
+## 一、当前状态
 
-已完成免费预检查、端点一致性整改、隔离环境、调用安全检查和自动化回归。当前停在真实联调授权节点。没有配置专用百炼 API Key，未收到调用次数和费用授权，真实模型验收未执行。
+DeepSeek 适配、费用控制、隐私授权和免费回归均使用原阶段 4 分支。此前百炼免费预检查的配置绑定、SQLite 选型及 D 盘运行规则继续生效。架构顾问审核基准为 `58d694527a25347e279ddd965bef8a01a3506e87`，本轮在其后继提交 `68e9ebb525303922b8783ad6a89a2bfe81511351` 上开发。
 
-本次环境位于 `D:/DevEnv/fooddiary-phase42`，使用独立 SQLite、私有图片根目录、两名本地测试账号和环回端口 15176／18022。Windows 目录权限限定为运行用户和 SYSTEM。API 与 Worker 由同一启动脚本共享配置。两名账号登录通过，已用 Chrome 演练正常手动保存。验收进程已停止，真实模型能力关闭，原开发数据库和 Demo 数据未用于联调。
+本轮真实模型调用为 **0 次**。已在私有配置文件写入供应商及官方地址，DeepSeek 专用 Key、最大尝试次数及费用授权尚未提供。账号模型权限、赠送额度和实际账单待核验，真实 Worker 保持关闭。
 
-## 二、阶段 4.1 补充问题
+## 二、接入与安全
 
-- **配置绑定**。增量迁移 `0005_ai_processing_context` 为新任务记录不含密钥的 Provider、模型和地域／工作空间端点摘要。在领取及发送前分别核对摘要，同时检查原提示词及用户授权版本。更换地域或同地域工作空间后，旧任务须由用户重新确认并创建。历史结果保留，无法证明原端点的任务不能继续发送。密钥轮换不改变端点绑定。 [任务服务](../backend/app/services/ai_jobs.py) · [Worker](../backend/app/services/ai_worker.py) · [迁移](../backend/migrations/versions/0005_ai_processing_context.py)
-- **数据库选型**。SQLite 是当前少量亲友使用版本的首选。MySQL 是将来高并发扩展候选。正式部署仍需验证备份、恢复、写入并发、WAL 文件和低空间保护。 [决策记录](DECISIONS.md)
-- **凭据与费用**。累计上限仍默认 0。隔离账本保留，启动脚本遇到缺失的已有账本会要求恢复。检查了实际预检日志、测试输出和 Git 内容，未发现完整测试密码、Key 或图片 Base64。真实模型仍需专用凭据与明确授权。 [联调启动脚本](../scripts/start-phase42-lab.ps1)
-- **分批验证**。脚本要求显式选择真实用例，每个任务只允许一次尝试。在鉴权、传输、参数、结构、状态异常或用量／费用估算未知时记录原因并暂停，避免继续发起下一例。 [联调记录脚本](../backend/tests/ai_benchmark.py)
+| 项目 | 实现 |
+| --- | --- |
+| 模型和接口 | `DeepSeekVisionProvider` 实现现有 `FoodRecognitionProvider`，使用 `deepseek-flash` 与 `POST https://api.deepseek.com/chat/completions`。联调地区字段 `official` 指官方统一入口，物理部署地区未验证 |
+| 请求 | httpx 单次请求，内联 Base64 JPEG，`thinking.type=disabled`、`stream=false`、`response_format.type=json_object`，联调初始输出上限 1024 Token |
+| 校验与错误处理 | 复用中文提示词和 Pydantic 结构。空内容、截断和非法结构安全失败，有可用 Token 时保存；鉴权失败、余额不足、限流、发送前错误和发送后结果未知保留不同状态 |
+| 官方地址与任务隔离 | 配置及发送时均校验官方 HTTPS 入口，禁用重定向和环境代理。任务指纹绑定供应商、模型、端点，领取和发送时再次核对。图片完整性、所有权、幂等与恢复继续由既有 API 和 Worker 检查 |
+| 图片授权 | 前端显示 DeepSeek 开放平台隐私政策并要求同意 `vision-deepseek-v1`。旧百炼授权 `vision-privacy-v1` 不满足 DeepSeek 新任务的授权要求 |
 
-## 三、模型、地域及参数
+[供应商实现](../backend/app/services/ai_provider.py) · [配置校验](../backend/app/core/config.py) · [任务与恢复](../backend/app/services/ai_jobs.py) · [Worker](../backend/app/services/ai_worker.py) · [DeepSeek 视觉理解](https://api-docs.deepseek.com/zh-cn/guides/vision/) · [JSON 输出](https://api-docs.deepseek.com/zh-cn/guides/json_mode/) · [平台隐私政策](https://cdn.deepseek.com/policies/zh-CN/deepseek-open-platform-privacy-policy.html)
 
-本轮计划模型只有 `qwen3-vl-flash`。官方文档列出 Qwen3-VL 图片 Data URI、OpenAI 兼容 Chat Completions 和非思考模式 JSON Object，应用另做 Pydantic 校验。请求预设为内联 JPEG、`stream=false`、`enable_thinking=false`、`response_format={"type":"json_object"}`、1024 输出 Token、Worker 并发 1、每任务尝试 1 次。实际账号的模型权限、所在地、端点及参数兼容性待首批核实。 [视觉与图像 Token](https://docs.modelstudio.console.alibabacloud.com/en/model-studio/vision) · [Chat 接口字段](https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions) · [结构化响应](https://www.alibabacloud.com/help/en/model-studio/qwen-structured-output) · [地域及工作空间](https://www.alibabacloud.com/help/en/model-studio/regions)
+## 三、累计额度与费用
 
-## 四、授权和实际调用
+原隔离 SQLite 已升级至 `0006_deepseek_budget`。两家真实供应商共用单用户和全局 UTC 日额度，各有独立且跨日、重启仍有效的累计次数。DeepSeek 新增计数行，Qwen 历史保留。两个累计上限均默认 0；明确未发送的尝试释放预留，结果未知的已发送尝试保守计入。
 
-用户授权次数与金额尚未提供。建议最多 12 次可能计费的尝试，费用授权不超过 USD 1 或确认的等值人民币。真实调用 **0 次**。独立数据库的 AI 任务、尝试日志和 Qwen 累计均为 0。
+浏览器首例与命令行各批次按所选供应商使用同一 SQLite。启动和下一例前从原账本核算既有 Token、费用和剩余次数，并为下一次请求留出保守上界。有未结清任务、历史用量未知、计数对不上或无法匹配模型、端点及价目时暂停。Worker 使用基于保守费用推导的绝对次数上限，浏览器首例模式在已消费次数上最多再放行一次。联调的 Worker 并发和每任务最大尝试次数均为 1。
 
-只需将所属地域工作空间的 `AI_BASE_URL` 和专用 `AI_API_KEY` 填入本机私有文件 `D:/DevEnv/fooddiary-phase42/provider.env`，再确认地域、最多尝试次数和费用上限。无需通过对话传输 Key。授权后按同一 SQLite 的累计账本设置绝对上限，并使用对应端口启动 API 与 Worker。
+DeepSeek 公布的高峰价格每百万 Token 为缓存未命中输入 CNY 2、输出 CNY 8，USD 口径分别为 0.30、1.20。按输入 1,048,576 和输出 1,024 Token 计算，下一次调用的本地保守上界约 CNY 2.1054 或 USD 0.3159。历史估算也按高峰且输入未命中计算，不抵扣赠送余额。实际费用以供应商的计量、适用价格、折扣及账单为准。公开资料说明优先使用赠送余额并提供余额查询；当前账号的赠送额度、账单与是否有可用的硬性预算设置均未验证。
 
-```powershell
-.\scripts\start-phase42-lab.ps1 -PrepareOnly
-.\scripts\start-phase42-lab.ps1
-```
+[迁移](../backend/migrations/versions/0006_deepseek_budget.py) · [本地预算计算](../backend/tests/benchmark_budget.py) · [CNY 价目](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) · [USD 价目](https://api-docs.deepseek.com/quick_start/pricing/) · [余额接口](https://api-docs.deepseek.com/api/get-user-balance/)
 
-上述命令可用于初始化和零费用启动。经用户批准后才可用 `-AuthorizedCallLimit` 开启真实调用。同一脚本的 `-BenchmarkOptions` 将已确认的参数转给联调工具，CSV 写入私有 `reports` 目录。保持同一个账本和相同绝对上限。 [百炼创建 API Key](https://www.alibabacloud.com/help/en/model-studio/get-api-key)
+## 四、授权与联调顺序
 
-## 五、逐例预期与实际
+在 D 盘原联调目录 `D:/DevEnv/fooddiary-phase42` 的私有 `provider.env` 填写 `AI_API_KEY`，其中已配置 `AI_PROVIDER=deepseek` 和 `AI_BASE_URL=https://api.deepseek.com`。对话只需确认最大真实调用次数及费用上限和币种。建议先授权 3 次、CNY 7，用于下表首批三例。若用户决定一次批准全部用例，可在同一预算下按已结算用量重新计算每批剩余额度。
 
-已离线校验 12 张公开生成样图和 11 个用例，私有预检结果表位于 `D:/DevEnv/fooddiary-phase42/reports/preflight-cases.csv`。首批可先在浏览器用可颂完成真实闭环，并以同一任务记录耗时与用量，再单独提交家常午餐和非食物样例。首批成功并核对账本后再执行余下八例。
+运行原 `start-phase42-lab.ps1`，API 与 Worker 共享配置、原账本及媒体目录，使用环回端口 15176 和 18022。沿用两名隔离测试账号、12 张生成样图、11 个用例和私有 CSV 报告。首例通过浏览器完成第三方授权、识别、修改、保存、查看手账和月历、刷新核验，再验证另一账号无法读取任务及照片。同一可颂任务用于页面截图和账本取证。首次出现鉴权、接口兼容、JSON 结构或用量异常时暂停。首批三例通过并核对预算后，可执行余下八例。 [启动脚本](../scripts/start-phase42-lab.ps1) · [样例与运行参数](ai-benchmark/README.md)
 
-| 批次 | 用例 | 预期 | 真实结果 |
+| 批次 | 用例 | 预期 | 实际 |
 | --- | --- | --- | --- |
-| 首批 | `croissant` | 可颂或牛角包 | 未执行 |
-| 首批 | `home-lunch` | 白米饭、番茄炒蛋、凉拌黄瓜 | 未执行 |
-| 首批 | `not-food` | `no_food`，候选为空 | 未执行 |
-| 后续 | `fried-rice` | 蛋炒饭 | 未执行 |
-| 后续 | `ramen` | 日式拉面 | 未执行 |
-| 后续 | `strawberries` | 草莓整份计一次 | 未执行 |
-| 后续 | `milk` | 牛奶；不确定成分留空 | 未执行 |
-| 后续 | `latte` | 拿铁或咖啡 | 未执行 |
-| 后续 | `packaged-oats` | 燕麦饼干；样图无营养标签 | 未执行 |
-| 后续 | `same-plate` | 两角度合并为一份番茄炒蛋 | 未执行 |
-| 后续 | `blurred` | 难以辨认或标明不确定，未知营养留空 | 未执行 |
+| 首批 | `croissant` | 可颂或牛角包 | 待授权 |
+| 首批 | `home-lunch` | 白米饭、番茄炒蛋、凉拌黄瓜 | 待授权 |
+| 首批 | `not-food` | `no_food`，候选为空 | 待授权 |
+| 后续 | `fried-rice` | 蛋炒饭 | 待授权 |
+| 后续 | `ramen` | 日式拉面 | 待授权 |
+| 后续 | `strawberries` | 草莓整份计一次 | 待授权 |
+| 后续 | `milk` | 牛奶，不确定成分留空 | 待授权 |
+| 后续 | `latte` | 拿铁或咖啡 | 待授权 |
+| 后续 | `packaged-oats` | 燕麦饼干，图片没有营养标签 | 待授权 |
+| 后续 | `same-plate` | 两个角度合并为一份番茄炒蛋 | 待授权 |
+| 后续 | `blurred` | 难以辨认或标注不确定，未知营养留空 | 待授权 |
 
-## 六、识别效果与耗时
+### 真实联调取证
 
-尚无真实供应商响应，识别效果、漏识、错识、去重、实际延迟和营养估算合理性均未测。本地 Fake Provider 和 MockTransport 用于回归。
+本轮没有实际识别输出、耗时或 Token，应用账本无新增真实模型费用，供应商账单未查询。真实模型结果、截图、手账保存后的来源、刷新和账号隔离均待首例验证。此前免费预检查有手动录入截图，本轮 MockTransport 与 Playwright 结果仅用于回归。生成图片可用于联调覆盖，营养准确率需有称重、配方或可靠包装营养标签。 [此前本地手动录入截图](screenshots/phase-4.2/00-local-preflight-ai-disabled.jpg)
 
-## 七、Token、费用与账单
-
-本轮无真实 Token 用量和供应商账单数据，未产生本轮模型调用费用。以阿里云中国站所列 Flash 低档位 0.15 元输入、1.50 元输出每百万 Token 为示例，若每次输入 32,000、输出 1,024 Token，12 次约 0.076 元。这只是指定地区、档位和输入假设下的应用估算。图像按预处理后视觉 Token 折入输入，实际计量与费用查 API 用量和账单。试用额度是否存在、剩余额度和控制台停服选项待核验。百炼国际站支持适用范围内的预算告警与到限停服，停服有延迟。 [中国站模型价格](https://help.aliyun.com/zh/model-studio/qwen3-vl-flash) · [免费额度](https://www.alibabacloud.com/help/en/model-studio/new-free-quota) · [供应商预算管理](https://www.alibabacloud.com/help/en/model-studio/budget-management)
-
-## 八、前端截图
-
-已截取运行中的隔离环境手动录入页，照片使用原创生成样例。浏览器验证真实 API 保存成功。此图无真实或模拟的模型输出。实际模型驱动的保存、月历、刷新及另一账号访问隔离需在首批闭环时验证。 [本地截图](screenshots/phase-4.2/00-local-preflight-ai-disabled.jpg)
-
-## 九、自动化回归
+## 五、自动化回归
 
 | 检查 | 结果 |
 | --- | --- |
-| pytest | 151 项通过，保留原 140 项并新增 11 项 |
-| API、AI、恢复、Worker 离线 Playwright | 分别 14、8、5、1 项通过 |
+| pytest | 182 项通过，包含原有 151 项；保留现有 Starlette 弃用提示 |
+| Playwright | API 14 项、模拟 AI 9 项、恢复 5 项、Worker 离线 1 项、模拟 AI 截图 2 项通过 |
 | Demo | 12 项交互、9 项截图通过 |
-| TypeScript、API/Demo 生产构建及包隔离 | 均通过 |
-| Alembic | 隔离库升级到 `0005_ai_processing_context`，无待应用操作 |
-| Git 与日志扫描 | 无运行数据库、私有账户文件、密钥或图片 Base64 纳入变更 |
+| TypeScript 与生产构建 | TypeScript、API 构建与 Demo 构建通过 |
+| Alembic | 原隔离库升级到 `0006_deepseek_budget`，模型一致性检查无待应用变更。只读核对 Qwen 和 DeepSeek 累计均为 0，未发现真实尝试记录 |
+| 本地预算 CLI | 用占位值检查同一账本，3 次和 CNY 7 的示例参数得到 0 次历史调用、0 元估算、CNY 2.105344 的下一次上界。该检查仅执行 SQLite 只读查询 |
 
-新增用例覆盖跨地域和同地域换工作空间、领取后切换端点、旧任务缺少绑定、密钥轮换、零额度默认拒绝以及首批失败／未知用量后停止。原 Starlette TestClient 的现有弃用提示仍出现。 [新增测试](../backend/tests/test_phase42.py)
+`test_deepseek.py` 覆盖单图及多图参数、空响应和截断、结构校验、鉴权和余额错误、限流、官方地址校验、授权版本、跨供应商任务隔离、累计与每日额度、发送前后传输错误及迁移。`test_benchmark_budget.py` 覆盖浏览器与两个批次跨连接累计、未知用量后暂停并保留另一供应商的历史记录。Playwright 新用例「DeepSeek 独立披露并在确认后发送对应授权版本」通过。首次并行回归有一项手账编辑点击超时，单独复跑通过，测试断言未更改。 [DeepSeek 测试](../backend/tests/test_deepseek.py) · [费用回归](../backend/tests/test_benchmark_budget.py) · [浏览器测试](../frontend/tests/ai.api.spec.ts)
 
-## 十、磁盘占用
+## 六、磁盘与交付
 
-| 磁盘 | 开始可用 | 预检结束可用 | 变化 |
+D 盘继续存放仓库、工具链、缓存、隔离账本和回归数据。没有安装新的大型依赖或模型。整盘空间变化包含本机其他进程。
+
+| 磁盘 | 本轮开始可用 | 回归结束可用 | 可用空间变化 |
 | --- | ---: | ---: | ---: |
-| C 盘 | 28.567 GiB | 28.570 GiB | 增加 2.63 MiB |
-| D 盘 | 316.053 GiB | 316.017 GiB | 减少 36.19 MiB |
+| C 盘 | 28.434 GiB | 28.422 GiB | 减少 11.83 MiB |
+| D 盘 | 315.945 GiB | 315.907 GiB | 减少 38.52 MiB |
 
-沿用 D 盘依赖、缓存、浏览器临时目录和测试数据。整盘读数包含本机其他进程。未安装依赖、SDK 或本地模型。
+交付分支为 `feature/phase-4-ai-recognition`，代码提交为 `f205af8e08a6cd070253983347dbae03da81aa83`。提交范围核查未发现真实密钥、私有数据库、样图 Base64 或联调日志。报告提交的完整 Git SHA 及远端状态随交付消息提供。 [GitHub 分支](https://github.com/zhenzhenqin/magic/tree/feature/phase-4-ai-recognition)
 
-## 十一、未解决事项及局限
-
-待核验百炼账号权限、模型兼容、Token 及实际费用，待执行真实模型前端闭环。当前样图可验证技术与识别表现。营养准确率需称重、配方或可靠包装营养标签，真实生活照片体验待用户主动授权。没有调整云服务器、Docker 或 WSL。
-
-## 十二、Git 交付
-
-分支 `feature/phase-4-ai-recognition`，基准 `74777dbda949eac32883410b341f5c813bfdcacb`，代码提交 `4789889eb5a607ceac837428b22d41115b305ef5`。报告用独立提交记录，分支最终完整 SHA 及工作区同步核验随交付消息提供。 [原阶段 4 分支](https://github.com/zhenzhenqin/magic/tree/feature/phase-4-ai-recognition)
-
-## 十三、验收结论
-
-免费预检查通过，真实联调未完成，阶段 4 尚未达到最终验收条件。暂停在阶段 4.2 等待授权和架构顾问审核。
+真实联调仍待 Key 和明确的次数、费用授权，阶段 4 尚未达到完整验收条件。本轮停留在阶段 4.2。
