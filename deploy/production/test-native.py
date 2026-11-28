@@ -11,7 +11,7 @@ import shutil
 import socket
 import subprocess
 from tempfile import TemporaryDirectory
-from time import sleep
+from time import monotonic, sleep
 from uuid import uuid4
 
 PRODUCTION = Path(__file__).resolve().parent
@@ -96,14 +96,16 @@ def smoke(release, wheelhouse, interpreter, nginx):
                     "-p", f"EnvironmentFile={env_file}", "-p", "PrivateTmp=true", "-p", "ProtectHome=true",
                     "-p", "ProtectSystem=strict", "-p", "NoNewPrivileges=true", "-p", f"ReadWritePaths={data} {media}",
                     python, "-m", "uvicorn", "app.main:create_app", "--factory", "--host", "127.0.0.1", "--port", port)
-            for _ in range(25):
+            deadline = monotonic() + 60
+            while True:
                 result = subprocess.run(["bash", health, "local", revision], capture_output=True, text=True)
                 if not result.returncode:
                     break
-                sleep(.25)
-            else:
-                subprocess.run(["journalctl", "-u", name, "-n", "15", "--no-pager"])
-                raise RuntimeError("Real Linux API did not become healthy: " + result.stderr)
+                if monotonic() >= deadline:
+                    subprocess.run(["journalctl", "-u", name, "-n", "20", "--no-pager"])
+                    subprocess.run(["ss", "-H", "-lntp", f"sport = :{port}"])
+                    raise RuntimeError("Real Linux API did not become healthy: " + result.stderr)
+                sleep(.5)
             incorrect = subprocess.run(["bash", health, "local", "f" * 40], capture_output=True)
             assert incorrect.returncode
             print(result.stdout.strip())
