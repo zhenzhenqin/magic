@@ -1,6 +1,6 @@
 # FoodDiary 生产部署
 
-本文件供阶段 7.2 经批准的执行使用。先确认宿主机支持周期、允许使用的 HTTPS 入口、云安全组与维护权限。 [实际状态](PHASE-7.2.md)
+本文件供阶段 7.4 经批准的执行使用。先确认宿主机支持周期、允许使用的 HTTPS 入口、云安全组、北京时间维护窗口和重启权限。 [实际状态](PHASE-7.4.md)
 
 ## 架构与目录
 
@@ -51,7 +51,9 @@ python3.13 deploy/production/render-nginx.py "$fooddiary_host" "$fooddiary_cert"
 
 ## 配置、密钥和账号
 
-使用 `deploy/production/fooddiary.env.example`。正式文件通过安全渠道放在私有目录中，使用独立高熵 JWT 密钥，明确填写 `APP_ORIGINS` 中的 HTTPS 域名或 IP，确认 SQLite 与媒体路径为绝对路径。保留 `PUBLIC_REGISTRATION=false`。生产拒绝 Fake Provider，初始 AI 两家累计上限均为 0、服务停用。贴纸服务初始停用，待权重部署许可和服务器内存验证后再启用。应用上传仍校验每张 10 MiB、2000 万像素，使用全局磁盘保留空间。
+使用 `deploy/production/fooddiary.env.example`，正式文件属主和组为 `root:fooddiary`，权限 `0640`。分别生成 JWT 和邮箱 HMAC 密钥，SMTP 授权码由发件邮箱生成，三者独立保管。填写 `APP_ORIGINS` 的实际可信 HTTPS 入口，SQLite 与媒体使用绝对路径。初始采用 `PUBLIC_REGISTRATION=false`、`REGISTRATION_MODE=closed`、`EMAIL_MODE=disabled`、`EMAIL_DAILY_LIMIT=30`。服务器只通过回环访问 API，Nginx 以自身见到的客户端地址覆盖转发来源，确保邮箱 IP 限流识别正确。
+
+初始 `AI_ENABLED=false`、`AI_PROVIDER=deepseek`、`AI_BYOK_SIMULATION=false`，两个历史真实累计额度均是 0，保留旧账本。真实 BYOK 等待供应商澄清和用户授权，生产拒绝 Fake 和模拟。贴纸按已核实的私人内测权重许可启用，先核验模型摘要和宿主资源。应用上传校验每张 10 MiB、2000 万像素，并使用全局磁盘保留空间。 [邮件配置](AUTH.md) · [个人 AI](BYOK.md)
 
 授权的管理员可在后台路径下交互创建测试账号。密码提示隐藏输入，同时进行二次确认。
 
@@ -60,7 +62,7 @@ cd /opt/fooddiary/current/backend
 sudo -u fooddiary .venv/bin/python -m app.create_account
 ```
 
-## 阶段 7.2 执行顺序
+## 阶段 7.4 执行顺序
 
 1. 在 D 盘以 `scripts/build-release.ps1` 构建目标提交，核对产物目录 `REVISION`、`SHA256SUMS` 和计划发布的完整 SHA。可用 `python3.13 deploy/production/release-manifest.py verify 目录 SHA` 核对未准备的发布包。
 2. 在受支持的 Linux 构建环境准备同架构 Python 3.13 二进制包及 wheelhouse。使用 `pip download --only-binary=:all: -r requirements.txt -r requirements-sticker.txt -d wheelhouse`。部署机准备工具、Python、Nginx 和 systemd 后，用 `bash deploy/production/prepare.sh check` 核对版本。

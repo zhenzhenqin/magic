@@ -4,13 +4,15 @@
 
 沿用同一个用户 ID、密码哈希和会话。用户名和已验证邮箱可用于密码登录，另支持登录、注册、找回密码、绑定和更换邮箱的独立用途验证码。邮箱地址去除首尾空白、规范化域名大小写，保留邮箱本地部分，禁止猜测供应商别名。邮箱索引唯一，绑定或更换前校验当前密码。邮箱密码尝试和验证码验证沿用服务限流。密码重设撤销全部会话，修改密码和更换邮箱撤销其他设备会话。删除账号需要输入当前用户名和密码，活动业务数据、共享与媒体按现有授权和存储模型清除，历史用量保留去关联记录。
 
-生产默认关闭公开注册。管理员可在受控本地终端运行 `python -m app.create_account` 建立账号。设置 `REGISTRATION_MODE=invite` 后，邮箱注册必须在同一事务消费有效邀请码。管理员可交互运行 `python -m app.manage_invitations create --uses 1 --hours 48` 或 `python -m app.manage_invitations revoke`。普通用户只接收邮件。
+生产默认关闭公开注册。管理员可在受控本地终端运行 `python -m app.create_account` 建立账号。设置 `REGISTRATION_MODE=invite` 后，注册验证码请求须提交 `invitation`。无效、过期、撤销、耗尽的邀请码在发信前拒绝。验证邀请码与预留邮件额度使用同一个 SQLite 写事务，发送验证码期间邀请码可用次数保持原值，注册成功才在同一事务核销验证码和邀请码。管理员可交互运行 `python -m app.manage_invitations create --uses 1 --hours 48` 或 `python -m app.manage_invitations revoke`。
 
 ## 邮件
 
 `EMAIL_MODE=disabled` 为默认。开发测试显式选择 `capture`，验证码存于进程内的测试邮箱。浏览器测试的测试邮箱产物放 D 盘，并与截图和仓库分开。验证码使用六位安全随机值、五分钟期限、60 秒重发等待、五次错误限制。每邮箱每小时最多五次、每 IP 十二次，另设全局每日发送上限。发送写库后才联系发信接口，发送失败的验证码不可使用。验证码及作用域仅存 HMAC。重设、登录在证实邮箱控制权前采用一致响应。事务确保同一挑战并发只能被消费一次。
 
-生产如需发信，由管理员本地配置独立的邮箱 HMAC 密钥、专用发件邮箱及 SMTP 授权码。支持验证 TLS 的 465 或 STARTTLS 587，不使用用户登录密码。QQ、163 及其他标准 SMTP 使用同一客户端，实际地址和账户级发信规则在启用前由管理员按对应邮箱控制台核验。本轮真实发信 0 次。 [腾讯 QQ 邮箱授权码说明](https://hiflow.tencent.com/document/applications/qq-mail/) · [网易邮箱授权说明](https://consumer.huawei.com/cn/support/content/zh-cn00406699/)
+密码修改、密码重设、邮箱绑定或更换以及账号删除会撤销现存相关验证码。绑定和换绑验证码绑定发起会话。会话撤销与后续敏感操作由 SQLite 写事务决定，携带已被撤销会话的请求无法在获得锁后继续提交。Nginx 覆盖外来转发来源头，API 只信任回环代理。初始生产全应用每日预留上限为 30 封，邮箱和 IP 限流同时生效。
+
+在专用 QQ 发件邮箱设置中启用 SMTP 并生成授权码。由管理员在受信任终端将 `SMTP_HOST=smtp.qq.com`、`SMTP_PORT=465`、对应的 `SMTP_SENDER` 与 `SMTP_USERNAME`、`SMTP_AUTHORIZATION_CODE` 写入私有环境文件。单独生成邮箱 HMAC 密钥，复核邮箱控制台的账户级限制。客户端支持隐式 TLS 465 或 STARTTLS 587，并验证服务器证书。先取得用户对指定收件人的授权，再用最多三封分别验证邮箱注册、验证码登录和找回密码。上海实例已验证 465 的 TLS，实际发信 0 次。 [腾讯 QQ 邮箱授权码说明](https://hiflow.tencent.com/document/applications/qq-mail/)
 
 ## 第三方登录
 
