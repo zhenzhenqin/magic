@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 import pytest
 from sqlalchemy import func, select, update
 
@@ -33,6 +34,15 @@ SECURITY = API + "/users/me/security"
 EMAIL = API + "/auth/email/"
 TEST_A = "fd-test-alice12345"
 TEST_B = "fd-test-bob678901"
+
+
+def test_smtp_port_is_read_from_environment_and_requires_secure_transport(monkeypatch, settings):
+    for port in (465, 587):
+        monkeypatch.setenv("SMTP_PORT", str(port))
+        assert Settings(_env_file=None, jwt_secret=settings.jwt_secret).smtp_port == port
+    monkeypatch.setenv("SMTP_PORT", "25")
+    with pytest.raises(ValidationError, match="implicit TLS on 465 or STARTTLS on 587"):
+        Settings(_env_file=None, jwt_secret=settings.jwt_secret)
 
 
 @pytest.fixture

@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     email_code_secret: SecretStr | None = None
     email_daily_limit: int = Field(default=100, ge=1, le=10000)
     smtp_host: str = ""
-    smtp_port: Literal[465, 587] = 465
+    smtp_port: int = 465
     smtp_sender: str = ""
     smtp_username: str = ""
     smtp_authorization_code: SecretStr | None = None
@@ -106,6 +106,13 @@ class Settings(BaseSettings):
     ai_max_attempts: int = Field(default=3, ge=1, le=5)
     ai_job_retention_seconds: int = Field(default=604_800, ge=86_400, le=2_592_000)
     ai_job_ttl_seconds: int = Field(default=900, ge=180, le=3600)
+
+    @field_validator("smtp_port")
+    @classmethod
+    def valid_smtp_port(cls, value: int) -> int:
+        if value not in (465, 587):
+            raise ValueError("SMTP requires implicit TLS on 465 or STARTTLS on 587")
+        return value
 
     @field_validator("ai_base_url")
     @classmethod
