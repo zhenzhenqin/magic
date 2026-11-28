@@ -4,7 +4,7 @@ set -euo pipefail
 current=/opt/fooddiary/current
 mode=${1:-local}
 request() {
-    curl --silent --show-error --noproxy '*' --max-time 5 --dump-header - --output /dev/null \
+    curl --disable --silent --show-error --noproxy '*' --max-time 5 --dump-header - --output /dev/null \
         --write-out '%{http_code}\n' "$@"
 }
 

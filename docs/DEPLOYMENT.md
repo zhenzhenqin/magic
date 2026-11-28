@@ -40,6 +40,15 @@ Nginx 模板由 `render-nginx.py` 生成独立站点，包含 HTTPS、固定主�
 4. 对 Android Chrome 和 iPhone Safari 分别登录两个内测账号，从实际后置取景、换镜、重拍、拒绝权限和后台恢复，到上传、轮廓、贴纸、保存、刷新与好友同步。断网后恢复并检查只写入一条记录。用第三账号验证不可访问，并确认撤销授权后旧媒体地址失效、离开相机后系统停止使用镜头。手机测试只用获准样例，脱敏截图和视频留在 D 盘。
 5. 备案及公网接入就绪后，新建公网 HTTPS 入口与精确 Origin，在同一发布版本上核验 TLS、账号重新登录、贴纸、撤销与备份。原私网入口可作为管理和恢复渠道，FastAPI 仍仅监听回环。
 
+授权部署时，用节点实际 MagicDNS 全名、证书和私网地址生成配置。生成器写入新文件，便于先检查再安装。
+
+```bash
+python3.13 deploy/production/render-nginx.py "$fooddiary_host" "$fooddiary_cert" \
+  "$fooddiary_key" /tmp/fooddiary-private.conf --private-ip "$fooddiary_private_ipv4"
+```
+
+私网模式的 FoodDiary 配置只监听指定 RFC 1918 或 RFC 6598 IPv4 的 `443` 和 `127.0.0.1:443`。回环监听供 `health.sh maintenance` 验证同一证书和维护状态。安装后检查 Nginx 整体仍无意外的公网监听，分别从已加入私网与未授权设备验收。公网模式继续使用原有 HTTP 跳转和 ACME 验证模板。 [Nginx 监听绑定](https://nginx.org/en/docs/http/ngx_http_core_module.html#listen)
+
 ## 配置、密钥和账号
 
 使用 `deploy/production/fooddiary.env.example`。正式文件通过安全渠道放在私有目录中，使用独立高熵 JWT 密钥，明确填写 `APP_ORIGINS` 中的 HTTPS 域名或 IP，确认 SQLite 与媒体路径为绝对路径。保留 `PUBLIC_REGISTRATION=false`。生产拒绝 Fake Provider，初始 AI 两家累计上限均为 0、服务停用。贴纸服务初始停用，待权重部署许可和服务器内存验证后再启用。应用上传仍校验每张 10 MiB、2000 万像素，使用全局磁盘保留空间。

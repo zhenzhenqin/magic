@@ -54,7 +54,7 @@ def ports():
         return a.getsockname()[1], b.getsockname()[1]
 
 
-def check(config_dir, root, binary, upstream_port):
+def check(config_dir, root, binary, upstream_port, private):
     host = "food.example"
     http, https = ports()
     cert, key = root / "localhost.crt", root / "localhost.key"
@@ -71,8 +71,19 @@ def check(config_dir, root, binary, upstream_port):
     (root / "shared" / "media").mkdir()
     (root / "shared" / "media" / "private.webp").write_bytes(b"private test file")
     site = root / "site.conf"
-    subprocess.run(["python3", config_dir / "render-nginx.py", host, cert, key, site], check=True)
-    source = site.read_text().replace("listen 80;", f"listen 127.0.0.1:{http};").replace(
+    render = ["python3", config_dir / "render-nginx.py", host, cert, key, site]
+    if private:
+        invalid = subprocess.run([*render, "--private-ip", "8.8.8.8"], capture_output=True)
+        assert invalid.returncode and not site.exists()
+    subprocess.run([*render, "--private-ip", "100.100.100.10"] if private else render, check=True)
+    source = site.read_text()
+    if private:
+        assert [line.strip() for line in source.splitlines() if line.strip().startswith("listen ")] == [
+            "listen 100.100.100.10:443 ssl bind;", "listen 127.0.0.1:443 ssl bind;",
+        ]
+        assert "acme-challenge" not in source
+        source = source.replace("100.100.100.10:443", f"127.0.0.2:{https}").replace("127.0.0.1:443", f"127.0.0.1:{https}")
+    source = source.replace("listen 80;", f"listen 127.0.0.1:{http};").replace(
         "listen 443 ssl;", f"listen 127.0.0.1:{https} ssl;",
     ).replace("https://food.example$request_uri", f"https://food.example:{https}$request_uri").replace(
         "/opt/fooddiary/current/web", str(web),
@@ -89,10 +100,10 @@ def check(config_dir, root, binary, upstream_port):
     command = [binary, "-p", str(root) + "/", "-c", config]
     subprocess.run([*command, "-t"], check=True)
 
-    def call(path, *, plain=False, body=None, headers=()):
+    def call(path, *, plain=False, body=None, headers=(), address="127.0.0.1"):
         scheme, port = ("http", http) if plain else ("https", https)
         curl = ["curl", "--noproxy", "*", "--max-time", "8", "--silent", "--show-error",
-                "--cacert", cert, "--resolve", f"{host}:{port}:127.0.0.1",
+                "--cacert", cert, "--resolve", f"{host}:{port}:{address}",
                 "--dump-header", "-", f"{scheme}://{host}:{port}{path}"]
         if body is not None:
             curl += ["--data-binary", "@-"]
@@ -115,8 +126,14 @@ def check(config_dir, root, binary, upstream_port):
                 sleep(.1)
         else:
             raise RuntimeError("Test Nginx did not start")
-        assert call("/", plain=True)[0] == 308
-        assert call("/api/v1/auth/login", plain=True, body=b"fixture")[0] == 405
+        if private:
+            assert call("/", address="127.0.0.2")[0] == 200
+            for address, port in (("127.0.0.3", https), ("127.0.0.2", http), ("127.0.0.1", http)):
+                with socket() as client:
+                    assert client.connect_ex((address, port)) != 0
+        else:
+            assert call("/", plain=True)[0] == 308
+            assert call("/api/v1/auth/login", plain=True, body=b"fixture")[0] == 405
         page_headers = call("/friends/example/diary")[1]
         assert page_headers["cache-control"] == "no-store"
         assert page_headers["permissions-policy"] == "camera=(self), microphone=(), geolocation=()"
@@ -140,7 +157,9 @@ def check(config_dir, root, binary, upstream_port):
         (root / "shared" / "maintenance").touch()
         maintenance = call("/api/v1/ready")
         assert maintenance[0] == 503 and maintenance[1]["x-fooddiary-maintenance"] == "1" and call("/")[0] == 503
-        print("Nginx template: TLS, redirects, SPA/assets, private responses, trusted forwarding, 413 and maintenance passed")
+        if private:
+            assert call("/api/v1/ready", address="127.0.0.2")[0] == 503
+        print(f"Nginx {'private' if private else 'public'} template: listener isolation, TLS, SPA/assets, private responses, 413 and maintenance passed")
     finally:
         process.terminate()
         process.wait(timeout=10)
@@ -151,5 +170,7 @@ if __name__ == "__main__":
     parser.add_argument("--nginx", type=Path, required=True)
     parser.add_argument("--temp", type=Path, required=True)
     args = parser.parse_args()
-    with TemporaryDirectory(dir=args.temp.resolve()) as folder, upstream() as port:
-        check(Path(__file__).resolve().parent, Path(folder), args.nginx.resolve(), port)
+    with upstream() as port:
+        for private in (False, True):
+            with TemporaryDirectory(dir=args.temp.resolve()) as folder:
+                check(Path(__file__).resolve().parent, Path(folder), args.nginx.resolve(), port, private)

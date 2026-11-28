@@ -1,4 +1,4 @@
-# Render domain/IP and certificate paths with render-nginx.py before installing.
+# Public HTTP and ACME challenge. Private TLS mode omits this block.
 server {
     listen 80;
     server_name @HOST@;
@@ -15,6 +15,7 @@ server {
     }
 }
 
+# HTTPS virtual host
 server {
     listen 443 ssl;
     server_name @HOST@;
