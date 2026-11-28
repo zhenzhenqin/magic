@@ -5,7 +5,7 @@ import { ApiError } from '../api/client'
 import { authMessage, useAuth } from '../stores/auth'
 import { usePrivateQuery } from './usePrivateQuery'
 
-export interface DraftPhoto { key: string; id?: string; file?: File; preview?: string }
+export interface DraftPhoto { key: string; id?: string; file?: File; preview?: string; captured?: boolean; useOriginal?: boolean }
 
 const inProgress = (job?: AiJob) => job?.status === 'pending' || job?.status === 'running'
 const failureMessages: Record<string, string> = {

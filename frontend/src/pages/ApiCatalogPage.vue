@@ -111,7 +111,7 @@ function combine() {
       <div v-else class="catalog-grid">
         <article v-for="item in catalog.items" :key="item.id" class="catalog-scrap">
           <button class="catalog-item" @click="open(item.id)">
-            <span class="cover"><PrivatePhoto v-if="item.cover_media_id" :id="item.cover_media_id" presentation="thumbnail" alt="" /><Utensils v-else aria-hidden="true" /></span>
+            <span class="cover"><PrivatePhoto v-if="item.cover_media_id" :id="item.cover_media_id" :presentation="item.cover_use_original ? undefined : 'thumbnail'" alt="" /><Utensils v-else aria-hidden="true" /></span>
             <strong>{{ item.display_name }}</strong>
             <small v-if="item.occasions">{{ item.occasions }} 次用餐<span v-if="item.cover_whole_meal"> · 整餐图</span></small>
             <small v-else>已无有效记录</small>
@@ -132,7 +132,7 @@ function combine() {
       <p v-else-if="!entry" class="caption" role="status">正在读取详情…</p>
       <template v-else>
         <div v-if="entry.cover_media_id" class="detail-cover">
-          <PrivatePhoto :id="entry.cover_media_id" presentation="sticker" :alt="entry.display_name + ' 代表照片'" />
+          <PrivatePhoto :id="entry.cover_media_id" :presentation="entry.cover_use_original ? undefined : 'sticker'" :alt="entry.display_name + ' 代表照片'" />
         </div>
         <p v-if="entry.cover_whole_meal" class="caption">代表图为所在整餐。</p>
         <p class="caption">{{ entry.category || '未分类' }} · {{ entry.occasions }} 次用餐 · {{ entry.details }} 条食物明细</p>

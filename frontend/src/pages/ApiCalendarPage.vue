@@ -39,7 +39,8 @@ const dates = computed(() => Array.from(
         <RouterLink v-for="(date, index) in dates" :key="date" class="day" :class="{ today: date === today }"
           :to="{ name: 'diary', query: { date } }" :aria-label="date + (stats.has(date) ? ' 有记录' : '')">
           <time :datetime="date">{{ index + 1 }}</time>
-          <PrivatePhoto v-if="stats.get(date)?.representative_media_id" :id="stats.get(date)!.representative_media_id!" class="calendar-thumb" presentation="thumbnail" alt="" />
+          <PrivatePhoto v-if="stats.get(date)?.representative_media_id" :id="stats.get(date)!.representative_media_id!" class="calendar-thumb"
+            :presentation="stats.get(date)?.representative_use_original ? undefined : 'thumbnail'" alt="" />
           <span v-if="stats.has(date)" class="caption day-count">{{ stats.get(date)?.meal_count }} 笔</span>
         </RouterLink>
       </div>

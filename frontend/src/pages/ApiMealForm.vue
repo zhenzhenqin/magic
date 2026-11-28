@@ -6,7 +6,10 @@ import { ApiError } from '../api/client'
 import { nutrientFields, useDiaryApi } from '../api/diaryRepository'
 import type { MealInput, MealItemInput } from '../api/diaryRepository'
 import type { AiCandidate } from '../api/aiRepository'
-import { stickerRunning } from '../api/stickerRepository'
+import { stickerRunning, useStickerApi } from '../api/stickerRepository'
+import CameraCapture from '../components/CameraCapture.vue'
+import CaptureSticker from '../components/CaptureSticker.vue'
+import type { CapturedPhoto } from '../camera/provider'
 import ModalSurface from '../components/ModalSurface.vue'
 import PageHeading from '../components/PageHeading.vue'
 import PrivatePhoto from '../components/PrivatePhoto.vue'
@@ -15,7 +18,8 @@ import { usePrivateQuery } from '../composables/usePrivateQuery'
 import { useDraftStickers } from '../composables/useDraftStickers'
 import { useMealRecognition } from '../composables/useMealRecognition'
 import type { DraftPhoto } from '../composables/useMealRecognition'
-import { authMessage } from '../stores/auth'
+import { authMessage, useAuth } from '../stores/auth'
+import { useStickerPlacement } from '../stores/stickerPlacement'
 import { mealKinds } from '../types/domain'
 import type { MealKind } from '../types/domain'
 import { mealLabels } from '../utils/labels'
@@ -30,6 +34,9 @@ interface DraftItem extends MealItemInput {
 const route = useRoute()
 const router = useRouter()
 const api = useDiaryApi()
+const stickerApi = useStickerApi()
+const auth = useAuth()
+const placement = useStickerPlacement()
 const { selected, timezone } = useApiDay()
 const identifier = computed(() => typeof route.query.edit === 'string' ? route.query.edit : undefined)
 const lookup = usePrivateQuery(() => identifier.value, (id, signal) => id ? api.meal(id, signal) : Promise.resolve(undefined))
@@ -47,6 +54,13 @@ const emptyDraft = (): Omit<MealInput, 'items'> & { items: DraftItem[] } => ({
 })
 const draft = reactive(emptyDraft())
 const photos = ref<DraftPhoto[]>([])
+const captured = computed(() => photos.value.find(photo => photo.captured))
+const featured = computed(() => captured.value ? stickerStates[captured.value.key] : undefined)
+const stage = ref<InstanceType<typeof CaptureSticker>>()
+const uploading = ref(false)
+const uploadFailed = ref(false)
+const cameraOpen = ref(route.query.camera === '1' && !identifier.value)
+const manualFocus = ref<HTMLElement>()
 const uploadScope = new AbortController()
 const uploads = new Map<string, Promise<string>>()
 let uploadTail = Promise.resolve()
@@ -58,8 +72,13 @@ function uploadPhoto(photo: DraftPhoto): Promise<string> {
   if (!file) return Promise.reject(new Error('Missing photo'))
   const task = uploadTail.then(async () => {
     if (uploadScope.signal.aborted || !photos.value.some(value => value.key === photo.key)) throw new Error('Photo removed')
-    photo.id = (await api.upload(file, uploadScope.signal)).id
-    return photo.id
+    const id = (await api.upload(file, uploadScope.signal)).id
+    if (!uploadScope.signal.aborted && !photos.value.some(value => value.key === photo.key)) {
+      void discard(id)
+      throw new Error('Photo removed')
+    }
+    photo.id = id
+    return id
   }).finally(() => uploads.delete(photo.key))
   uploadTail = task.then(() => {}, () => {})
   uploads.set(photo.key, task)
@@ -96,10 +115,65 @@ const error = ref('')
 const maySaveWithoutSource = ref(false)
 const progress = ref('')
 const picking = ref<HTMLInputElement>()
-const camera = ref<HTMLInputElement>()
 let saveAttempt: { key: string; body: string; uncertain: boolean } | undefined
 let active = true
 let formVersion = 0
+let confirmedSave = false
+
+watch(() => route.query.camera, value => { if (value === '1' && !identifier.value) cameraOpen.value = true })
+function closeCamera() {
+  cameraOpen.value = false
+  if (route.query.camera) {
+    const { camera: _camera, ...query } = route.query
+    void router.replace({ name: 'capture', query })
+  }
+}
+function manual() { closeCamera(); requestAnimationFrame(() => manualFocus.value?.querySelector<HTMLInputElement>('[data-food-name]')?.focus()) }
+function cancelCamera() {
+  if (route.query.camera === '1' && !photos.value.length && !hasExistingFood.value) {
+    cameraOpen.value = false
+    void router.replace({ name: 'diary', query: { date: draft.local_date } })
+  } else closeCamera()
+}
+
+async function discard(id: string, jobId?: string) {
+  const owner = auth.currentUser?.public_id
+  if (!owner) return
+  try {
+    const existing = jobId ?? (await stickerApi.source(id))?.id
+    if (owner !== auth.currentUser?.public_id) return
+    if (existing) await stickerApi.cancel(existing)
+  } catch { /* An expired or unavailable job leaves server-side draft expiry as a fallback. */ }
+  if (owner === auth.currentUser?.public_id) void api.discardDraft(id).catch(() => {})
+}
+
+async function uploadCaptured(photo: DraftPhoto) {
+  uploading.value = true
+  uploadFailed.value = false
+  try {
+    await uploadPhoto(photo)
+    if (captured.value?.key === photo.key && stickersOnline.value && !stickerStates[photo.key]?.job) void runSticker(photo, 'make')
+  } catch { if (captured.value?.key === photo.key) uploadFailed.value = true }
+  finally { if (captured.value?.key === photo.key) uploading.value = false }
+}
+function acceptCapture({ file }: CapturedPhoto) {
+  closeCamera()
+  if (photos.value.length >= 5) { error.value = '一餐最多选择 5 张照片。'; return }
+  const key = crypto.randomUUID()
+  photos.value.unshift({ key, file, preview: URL.createObjectURL(file), captured: true })
+  if (!identifier.value && draft.local_date === selected.value && photos.value.length === 1 && !hasExistingFood.value && !requested) {
+    const time = new Intl.DateTimeFormat('en-GB', { timeZone: timezone.value, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    draft.local_time = time.format(new Date())
+  }
+  void uploadCaptured(photos.value[0])
+}
+function retake() {
+  const index = photos.value.findIndex(photo => photo.captured)
+  if (index !== -1) removePhoto(index)
+  cameraOpen.value = true
+}
+function recoverUpload() { if (captured.value && uploadFailed.value && !progress.value) void uploadCaptured(captured.value) }
+window.addEventListener('online', recoverUpload)
 
 watch(timezone, zone => { if (!identifier.value) draft.timezone = zone })
 watch(selected, date => {
@@ -117,7 +191,7 @@ watch(identifier, () => {
 watch(saved, meal => {
   if (!meal) return
   photos.value.forEach(dispose)
-  photos.value = meal.media.map(photo => ({ key: photo.id, id: photo.id }))
+  photos.value = meal.media.map(photo => ({ key: photo.id, id: photo.id, useOriginal: photo.use_original }))
   Object.assign(draft, {
     meal_type: meal.meal_type, local_date: meal.local_date, local_time: meal.local_time.slice(0, 5),
     timezone: meal.timezone, note: meal.note,
@@ -133,7 +207,11 @@ watch(saved, meal => {
 function dispose(photo: DraftPhoto) { if (photo.preview) URL.revokeObjectURL(photo.preview) }
 onScopeDispose(() => {
   active = false
+  window.removeEventListener('online', recoverUpload)
   uploadScope.abort()
+  if (!confirmedSave && !saveAttempt?.uncertain) {
+    for (const photo of photos.value) if (photo.captured && photo.id) void discard(photo.id, stickerStates[photo.key]?.job?.id)
+  }
   photos.value.forEach(dispose)
 })
 
@@ -151,6 +229,7 @@ function removePhoto(index: number) {
   const photo = photos.value[index]
   dispose(photo)
   photos.value.splice(index, 1)
+  if (photo.captured && photo.id && !saveAttempt?.uncertain) void discard(photo.id, stickerStates[photo.key]?.job?.id)
   if (photo.id) {
     for (const item of draft.items) {
       if (item.aiMedia?.includes(photo.id)) clearReference(item)
@@ -185,6 +264,7 @@ function startRecognition() {
 function collect(): MealInput {
   return {
     ...draft, media_ids: photos.value.map(photo => photo.id).filter((id): id is string => !!id),
+    original_media_ids: photos.value.flatMap(photo => photo.useOriginal && photo.id ? [photo.id] : []),
     items: draft.items.map(({ draftKey: _key, source: _source, simulated: _simulated, uncertainty: _uncertainty, aiMedia: _media, ...item }) => {
       const clean = { ...item, food_name: item.food_name.trim(), category: item.category?.trim() || null }
       for (const key of Object.keys(fields) as (keyof typeof fields)[]) {
@@ -232,7 +312,14 @@ async function submit() {
       saveAttempt.uncertain = true
       result = await api.create(input, saveAttempt.key)
     }
-    if (active && version === formVersion) await router.push({ name: 'diary', query: { date: result.local_date } })
+    if (active && version === formVersion) {
+      confirmedSave = true
+      const ready = stage.value?.placement()
+      if (!saved.value && ready && captured.value?.id && !captured.value.useOriginal) {
+        placement.offer({ ...ready, meal: result.id, media: captured.value.id })
+      }
+      await router.push({ name: 'diary', query: { date: result.local_date } })
+    }
   } catch (failure) {
     if (!active || version !== formVersion) return
     if (saveAttempt && failure instanceof ApiError && failure.status > 0 && failure.status < 500) saveAttempt.uncertain = false
@@ -261,18 +348,41 @@ function keepAsManual() {
 
 <template>
   <div>
+    <CameraCapture v-if="cameraOpen" @photo="acceptCapture" @close="cancelCamera" @manual="manual" />
     <RouterLink class="text-action" :to="{ name: 'diary', query: { date: draft.local_date } }">返回手账</RouterLink>
-    <PageHeading :title="identifier ? '编辑饮食' : '记下这一餐'" subtitle="从照片或食物名称开始，记下这一餐。" />
+    <PageHeading :title="identifier ? '编辑饮食' : '记下这一餐'" />
     <p v-if="identifier && loading" class="caption" role="status">正在读取记录…</p>
     <div v-else-if="identifier && loadError" class="paper-panel empty-state"><p>{{ loadError }}</p><button class="button" @click="lookup.reload()">重新读取</button></div>
     <form v-else class="capture-grid" @submit.prevent="submit">
       <section class="paper-panel panel-pad form-stack">
         <h2>食物照片</h2>
         <input ref="picking" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="choose" />
-        <input ref="camera" type="file" accept="image/*" capture="environment" hidden @change="choose" />
-        <div v-if="photos.length" class="previews" aria-label="上传预览">
-          <figure v-for="(photo, index) in photos" :key="photo.key" class="preview">
-            <PrivatePhoto v-if="photo.id && stickerStates[photo.key]?.job?.ready && stickerStates[photo.key]?.mode !== 'original'"
+        <section v-if="captured?.preview" class="form-stack captured-photo" aria-label="拍照预览">
+          <CaptureSticker :key="captured.key" ref="stage" :source="captured.preview" :media="captured.id"
+            :revision="featured?.job?.ready ? featured.job.result_id : undefined"
+            :extracting="Boolean(captured.id) && !featured?.error && stickerRunning(featured?.job)"
+            :original="captured.useOriginal === true" />
+          <p v-if="uploading && !captured.id" role="status" class="caption">正在上传照片…</p>
+          <p v-else-if="uploadFailed && !captured.id" role="status" class="caption">照片还在这里，网络恢复后可以重新上传。</p>
+          <p v-else-if="featured?.error || featured?.job?.status === 'failed'" role="status" class="caption">这次没能完整取出食物，可以先使用原图。</p>
+          <label v-if="capabilities?.available">
+            <input type="checkbox" :checked="picked.includes(captured.key)" :disabled="!!progress || (!picked.includes(captured.key) && picked.length >= maxImages)"
+              aria-label="识别拍摄照片" @change="togglePhoto(captured.key, ($event.target as HTMLInputElement).checked)" /> 参与识别
+          </label>
+          <div class="toolbar">
+            <button type="button" class="text-action" :disabled="!!progress" @click="retake">重新拍摄</button>
+            <button type="button" class="text-action" :disabled="!!progress" @click="removePhoto(photos.indexOf(captured))">取消这张照片</button>
+            <button v-if="uploadFailed && !captured.id" type="button" class="text-action" :disabled="!!progress" @click="uploadCaptured(captured)">重试上传</button>
+            <button v-if="!captured.useOriginal" type="button" class="text-action" :disabled="!!progress" @click="captured.useOriginal = true">使用原图</button>
+            <button v-else-if="featured?.job?.ready" type="button" class="text-action" :disabled="!!progress" @click="captured.useOriginal = false">使用贴纸</button>
+            <button v-if="captured.id && stickersOnline && !featured?.busy && !stickerRunning(featured?.job)" type="button" class="text-action" :disabled="!!progress"
+              @click="captured.useOriginal = false; runSticker(captured, featured?.job ? 'retry' : 'make')">重新抠图</button>
+          </div>
+        </section>
+        <div v-if="photos.some(photo => photo.key !== captured?.key)" class="previews" aria-label="上传预览">
+          <template v-for="(photo, index) in photos" :key="photo.key">
+          <figure v-if="photo.key !== captured?.key" class="preview">
+            <PrivatePhoto v-if="photo.id && stickerStates[photo.key]?.job?.ready && !photo.useOriginal && stickerStates[photo.key]?.mode !== 'original'"
               :id="photo.id" class="preview-sticker" :presentation="stickerStates[photo.key].mode === 'cutout' ? 'cutout' : 'sticker'"
               :revision="stickerStates[photo.key].job?.result_id" :alt="stickerStates[photo.key].mode === 'cutout' ? '透明抠图' : '美食贴纸'" />
             <img v-else-if="photo.preview" :src="photo.preview" :alt="'待保存的照片 ' + (index + 1)" />
@@ -290,7 +400,7 @@ function keepAsManual() {
               <p v-else-if="stickerStates[photo.key]?.job?.ready" role="status">{{ stickerStates[photo.key]?.job?.manual ? '手动裁剪已保存。' : '美食贴纸做好啦。' }}</p>
               <div v-if="stickerStates[photo.key]?.job?.ready" class="sticker-modes" aria-label="图片预览方式">
                 <button v-for="mode in (['original', 'cutout', 'sticker'] as const)" :key="mode" type="button" class="text-action"
-                  :aria-pressed="stickerStates[photo.key].mode === mode" @click="stickerStates[photo.key].mode = mode">{{ { original: '原图', cutout: '抠图', sticker: '贴纸' }[mode] }}</button>
+                  :aria-pressed="(photo.useOriginal ? 'original' : stickerStates[photo.key].mode) === mode" @click="stickerStates[photo.key].mode = mode; photo.useOriginal = mode === 'original'">{{ { original: '原图', cutout: '抠图', sticker: '贴纸' }[mode] }}</button>
               </div>
               <button v-if="stickerRunning(stickerStates[photo.key]?.job)" type="button" class="text-action" @click="runSticker(photo, 'cancel')">取消制作</button>
               <div v-else-if="stickersOnline && !stickerStates[photo.key]?.busy" class="sticker-modes">
@@ -300,15 +410,16 @@ function keepAsManual() {
               </div>
             </figcaption>
           </figure>
+          </template>
         </div>
-        <p class="caption">JPEG、PNG 或 WebP，每餐最多 5 张，每张不超过 10 MiB。</p>
+        <p v-if="!captured" class="caption">JPEG、PNG 或 WebP，每餐最多 5 张，每张不超过 10 MiB。</p>
         <div class="toolbar">
-          <button type="button" class="button" :disabled="!!progress || photos.length >= 5" @click="picking?.click()"><ImagePlus /> 选择本地图片</button>
-          <button type="button" class="button" :disabled="!!progress || photos.length >= 5" @click="camera?.click()"><Camera /> 拍一张</button>
+          <button type="button" :class="captured ? 'text-action' : 'button'" :disabled="!!progress || photos.length >= 5" @click="picking?.click()"><ImagePlus /> {{ captured ? '添加其他照片' : '选择本地图片' }}</button>
+          <button v-if="!captured" type="button" class="button" :disabled="!!progress || photos.length >= 5" @click="cameraOpen = true"><Camera /> 拍一张</button>
         </div>
         <p v-if="!photos.length" class="caption">也可以只填写食物信息。</p>
         <div v-if="stickersEnabled" class="sticker-options">
-          <label><input v-model="autoSticker" type="checkbox" /> 自动制作贴纸</label>
+          <label v-if="!captured"><input v-model="autoSticker" type="checkbox" /> 自动制作贴纸</label>
           <span v-if="stickersSimulated" class="caption">模拟抠图</span>
           <button v-if="!stickersOnline" class="text-action" type="button" @click="checkStickerWorker">贴纸暂不可用 · 检查状态</button>
         </div>
@@ -360,7 +471,7 @@ function keepAsManual() {
           </template>
         </div>
       </section>
-      <section class="paper-panel panel-pad">
+      <section ref="manualFocus" class="paper-panel panel-pad">
         <fieldset class="form-stack" :disabled="!!progress" aria-label="饮食信息">
           <div class="field-grid">
             <label class="field">记录日期<input v-model="draft.local_date" type="date" required min="1900-01-01" max="2200-12-31" /></label>
@@ -375,7 +486,7 @@ function keepAsManual() {
               <span v-if="item.uncertainty"> · {{ item.uncertainty }}</span>
             </p>
             <div class="field-grid">
-              <label class="field">食物名称<input v-model="item.food_name" maxlength="80" required /></label>
+              <label class="field">食物名称<input v-model="item.food_name" data-food-name maxlength="80" required /></label>
               <label class="field">分类<input v-model="item.category" maxlength="40" placeholder="可选" /></label>
             </div>
             <details :open="identifier ? true : undefined">
@@ -393,7 +504,7 @@ function keepAsManual() {
           <label class="field">这一餐的备注<textarea v-model="draft.note" maxlength="1000" placeholder="记下想留住的细节" /></label>
           <p v-if="error" class="form-error" role="alert">{{ error }}</p>
           <button v-if="maySaveWithoutSource" type="button" class="text-action" @click="keepAsManual">将这次识别结果转为手动明细</button>
-          <button type="submit" class="button button-primary" :disabled="waiting && !job">{{ progress || '保存记录' }}</button>
+          <button type="submit" class="button button-primary" :disabled="!!progress || (waiting && !job)">{{ progress || (captured ? '贴进手账' : '保存记录') }}</button>
         </fieldset>
         <button v-if="identifier && error" class="text-action" @click="lookup.reload()">重新读取服务端记录</button>
       </section>

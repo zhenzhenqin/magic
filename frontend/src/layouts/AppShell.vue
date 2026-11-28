@@ -25,7 +25,7 @@ const isActive = (section: string[]) => section.some(path => route.path === path
         <span>FoodDiary<small>美 食 手 账</small></span>
       </RouterLink>
       <nav class="navigation" aria-label="主导航">
-        <RouterLink v-for="item in navigation" :key="item.to" :to="item.to"
+        <RouterLink v-for="item in navigation" :key="item.to" :to="!demo && item.to === '/capture' ? { name: 'capture', query: { camera: '1' } } : item.to"
           class="nav-link" :class="{ 'nav-active': isActive(item.section), 'nav-camera': item.to === '/capture', 'nav-secondary': item.to === '/friends' || item.to === '/me' }"
           :aria-current="isActive(item.section) ? 'page' : undefined">
           <span class="nav-icon" aria-hidden="true">

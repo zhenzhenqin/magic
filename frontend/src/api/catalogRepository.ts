@@ -8,6 +8,7 @@ export interface FoodEntry {
   category: string | null
   cover_media_id: string | null
   cover_whole_meal: boolean
+  cover_use_original?: boolean
   is_favorite: boolean
   first_eaten: string | null
   last_eaten: string | null

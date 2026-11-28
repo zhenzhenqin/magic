@@ -57,8 +57,9 @@ class SharingPolicy:
         return [kind for permission, kind in (("stickers", "sticker"), ("photos", "photo")) if self.allows(permission)]
 
     def scope_media(self, query):
-        return (query.join(MediaAsset, (MediaAsset.id == MealMedia.media_id) & (MediaAsset.user_id == MealMedia.user_id))
-                .where(MealMedia.user_id == self.owner, MediaAsset.status == "attached", ~used_by_ai(MediaAsset.id, utcnow())))
+        query = (query.join(MediaAsset, (MediaAsset.id == MealMedia.media_id) & (MediaAsset.user_id == MealMedia.user_id))
+                 .where(MealMedia.user_id == self.owner, MediaAsset.status == "attached", ~used_by_ai(MediaAsset.id, utcnow())))
+        return query if self.allows("photos") else query.where(MealMedia.use_original.is_(False))
 
     def food_rows(self):
         return (select(func.fooddiary_name(MealItem.food_name).label("name"), MealItem.food_name.label("label"),
@@ -73,8 +74,8 @@ def page(db, query, page_number, limit, order):
     return rows, total
 
 
-def media_value(identifier, kinds):
-    return dict(id=identifier, kinds=kinds)
+def media_value(identifier, kinds, original=False):
+    return dict(id=identifier, kinds=[kind for kind in kinds if kind != "sticker"] if original else kinds)
 
 
 def meals_projection(db, policy, rows):
@@ -92,9 +93,9 @@ def meals_projection(db, policy, rows):
             items[meal].append(visible)
     kinds = policy.kinds()
     if ids and kinds:
-        query = policy.scope_media(select(MealMedia.meal_id, MealMedia.media_id)).where(MealMedia.meal_id.in_(ids))
-        for meal, image in db.execute(query.order_by(MealMedia.meal_id, MealMedia.sort_order)):
-            media[meal].append(media_value(image, kinds))
+        query = policy.scope_media(select(MealMedia.meal_id, MealMedia.media_id, MealMedia.use_original)).where(MealMedia.meal_id.in_(ids))
+        for meal, image, original in db.execute(query.order_by(MealMedia.meal_id, MealMedia.sort_order)):
+            media[meal].append(media_value(image, kinds, original))
     result = []
     for meal in rows:
         local_time = meal.eaten_at.astimezone(ZoneInfo(meal.timezone)).strftime("%H:%M")
@@ -127,7 +128,8 @@ def meal(db, policy, identifier):
 def sticker_cover_order(query, policy):
     if policy.allows("stickers"):
         return query.outerjoin(MediaDerivative, (MediaDerivative.source_media_id == MealMedia.media_id)
-                               & (MediaDerivative.user_id == policy.owner) & (MediaDerivative.status == "ready")), (
+                               & (MediaDerivative.user_id == policy.owner) & (MediaDerivative.status == "ready")
+                               & MealMedia.use_original.is_(False)), (
                                    MediaDerivative.id.is_not(None).desc(),
                                )
     return query, ()
@@ -146,7 +148,7 @@ def calendar(db, policy, month):
     covers = {}
     kinds = policy.kinds()
     if counts and kinds:
-        images = select(Meal.local_date, Meal.id.label("meal_id"), MealMedia.media_id).select_from(Meal).join(
+        images = select(Meal.local_date, Meal.id.label("meal_id"), MealMedia.media_id, MealMedia.use_original).select_from(Meal).join(
             MealMedia, MealMedia.meal_id == Meal.id,
         ).where(*bounds)
         images = policy.scope_media(images)
@@ -154,8 +156,8 @@ def calendar(db, policy, month):
         ranked = images.add_columns(func.row_number().over(partition_by=Meal.local_date, order_by=(
             *preference, Meal.eaten_at.desc(), Meal.id, MealMedia.sort_order,
         )).label("rank")).subquery()
-        covers = {day: dict(media=media_value(image, kinds), meal_id=meal_id) for day, meal_id, image in db.execute(
-            select(ranked.c.local_date, ranked.c.meal_id, ranked.c.media_id).where(ranked.c.rank == 1),
+        covers = {day: dict(media=media_value(image, kinds, original), meal_id=meal_id) for day, meal_id, image, original in db.execute(
+            select(ranked.c.local_date, ranked.c.meal_id, ranked.c.media_id, ranked.c.use_original).where(ranked.c.rank == 1),
         )}
     return dict(month=month, days=[dict(date=day, meals=count, **covers.get(day, {})) for day, count in counts])
 
@@ -192,7 +194,7 @@ def food_covers(db, policy, source, names, kinds):
     gallery = select(source.c.name, source.c.meal_id, source.c.eaten).where(
         source.c.name.in_(names),
     ).distinct().subquery()
-    photos = select(gallery.c.name, MealMedia.media_id, (select(func.count()).select_from(MealItem).where(
+    photos = select(gallery.c.name, MealMedia.media_id, MealMedia.use_original, (select(func.count()).select_from(MealItem).where(
         MealItem.meal_id == MealMedia.meal_id,
     ).correlate(MealMedia).scalar_subquery() > 1).label("whole")).select_from(gallery).join(
         MealMedia, MealMedia.meal_id == gallery.c.meal_id,
@@ -201,8 +203,8 @@ def food_covers(db, policy, source, names, kinds):
     rank = photos.add_columns(func.row_number().over(partition_by=gallery.c.name, order_by=(
         *preference, gallery.c.eaten.desc(), gallery.c.meal_id, MealMedia.sort_order,
     )).label("rank")).subquery()
-    return {name: dict(cover=media_value(image, kinds), cover_whole_meal=whole) for name, image, whole in db.execute(
-        select(rank.c.name, rank.c.media_id, rank.c.whole).where(rank.c.rank == 1),
+    return {name: dict(cover=media_value(image, kinds, original), cover_whole_meal=whole) for name, image, original, whole in db.execute(
+        select(rank.c.name, rank.c.media_id, rank.c.use_original, rank.c.whole).where(rank.c.rank == 1),
     )}
 
 
@@ -265,6 +267,8 @@ def media_key(db, policy, media_id, variant, meal_id=None, catalog_id=None):
         *policy.conditions(), MealMedia.media_id == media_id,
     )
     query = policy.scope_media(query)
+    if variant not in ("photo", "thumbnail"):
+        query = query.where(MealMedia.use_original.is_(False))
     if catalog_id:
         policy.require("catalog", "names")
         source = policy.food_rows()

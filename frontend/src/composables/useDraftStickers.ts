@@ -46,6 +46,7 @@ export function useDraftStickers(photos: () => DraftPhoto[], upload: (photo: Dra
     const current = state(key)
     const fresh = job?.ready && job.result_id !== current.job?.result_id
     current.job = job
+    current.error = false
     if (fresh) current.mode = 'sticker'
     if (!stickerRunning(job) || !job) return
     timers.set(key, setTimeout(async () => {
@@ -75,7 +76,7 @@ export function useDraftStickers(photos: () => DraftPhoto[], upload: (photo: Dra
         : await api.create(id, crop, signal)
       update(photo.key, job, controller)
     } catch {
-      if (!signal.aborted && action !== 'read') current.error = true
+      if (!signal.aborted) current.error = true
     } finally {
       if (!signal.aborted) current.busy = false
     }
@@ -89,7 +90,8 @@ export function useDraftStickers(photos: () => DraftPhoto[], upload: (photo: Dra
     }
     for (const photo of current) {
       if (states[photo.key]) continue
-      if (photo.id) void run(photo, 'read')
+      if (photo.captured && online.value) void run(photo, 'make')
+      else if (photo.id && !photo.captured) void run(photo, 'read')
       else if (auto.value && online.value) void run(photo, 'make')
     }
   }
@@ -106,8 +108,16 @@ export function useDraftStickers(photos: () => DraftPhoto[], upload: (photo: Dra
 
   watch(() => photos().map(photo => photo.key).join(','), gather)
   watch(auto, value => { setAutoStickerEnabled(value); gather() })
+  function recover() {
+    void check()
+    for (const photo of photos()) {
+      if (photo.id && states[photo.key]?.error) void run(photo, photo.captured ? 'make' : 'read')
+    }
+  }
+  window.addEventListener('online', recover)
   void check()
   onScopeDispose(() => {
+    window.removeEventListener('online', recover)
     alive.abort()
     for (const key of controllers.keys()) cleanup(key)
   })

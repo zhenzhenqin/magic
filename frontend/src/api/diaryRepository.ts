@@ -15,6 +15,7 @@ export interface MediaInfo {
   width: number
   height: number
   status: 'draft' | 'attached'
+  use_original?: boolean
 }
 
 export interface MealItemInput {
@@ -38,9 +39,10 @@ export interface MealInput {
   note: string
   items: MealItemInput[]
   media_ids: string[]
+  original_media_ids?: string[]
 }
 
-export interface Meal extends Omit<MealInput, 'media_ids' | 'items'> {
+export interface Meal extends Omit<MealInput, 'media_ids' | 'original_media_ids' | 'items'> {
   id: string
   version: number
   items: (MealItemInput & { id: string; source: 'manual' | 'ai' | 'ai_edited'; ai_provider: string | null })[]
@@ -48,7 +50,7 @@ export interface Meal extends Omit<MealInput, 'media_ids' | 'items'> {
 }
 
 export interface MealPage { items: Meal[]; page: number; limit: number; total: number }
-export interface CalendarDay { date: string; meal_count: number; representative_media_id: string | null }
+export interface CalendarDay { date: string; meal_count: number; representative_media_id: string | null; representative_use_original?: boolean }
 export interface Calendar { month: string; days: CalendarDay[] }
 export interface Daily {
   date: string
@@ -77,5 +79,6 @@ export function useDiaryApi() {
     photo: (id: string, original: boolean, signal: AbortSignal) => api<Blob>(
       path('media', id) + (original ? '' : '/thumbnail'), { response: 'blob', signal },
     ),
+    discardDraft: (id: string, signal?: AbortSignal) => api<void>(path('media', id), { method: 'DELETE', signal }),
   }
 }

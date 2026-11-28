@@ -47,10 +47,10 @@ def cover_options(owner, identifier):
              .where(CatalogLink.user_id == owner, CatalogLink.catalog_id == identifier))
     whole_meal = (select(func.count()).select_from(MealItem).where(MealItem.meal_id == MealMedia.meal_id)
                   .correlate(MealMedia).scalar_subquery() > 1)
-    return (select(MealMedia.media_id, whole_meal.label("whole_meal"))
+    return (select(MealMedia.media_id, MealMedia.use_original, whole_meal.label("whole_meal"))
             .join(Meal, (Meal.id == MealMedia.meal_id) & (Meal.user_id == MealMedia.user_id))
             .outerjoin(MediaDerivative, (MediaDerivative.source_media_id == MealMedia.media_id)
-                       & (MediaDerivative.user_id == MealMedia.user_id))
+                       & (MediaDerivative.user_id == MealMedia.user_id) & MealMedia.use_original.is_(False))
             .where(MealMedia.user_id == owner, MealMedia.meal_id.in_(meals))
             .order_by(MediaDerivative.id.is_not(None).desc(), Meal.eaten_at.desc(), MealMedia.sort_order, Meal.id))
 
@@ -62,6 +62,7 @@ def projection(db, owner, entry, occasions, details, first, last):
         picked = db.execute(choices.limit(1)).first()
     return dict(id=entry.id, canonical_name=entry.canonical_name, display_name=entry.display_name,
                 category=entry.category, cover_media_id=picked.media_id if picked else None,
+                cover_use_original=bool(picked and picked.use_original),
                 cover_whole_meal=bool(picked and picked.whole_meal), is_favorite=entry.is_favorite,
                 first_eaten=first, last_eaten=last, occasions=occasions or 0, details=details or 0)
 

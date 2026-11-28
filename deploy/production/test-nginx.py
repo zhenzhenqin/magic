@@ -117,7 +117,11 @@ def check(config_dir, root, binary, upstream_port):
             raise RuntimeError("Test Nginx did not start")
         assert call("/", plain=True)[0] == 308
         assert call("/api/v1/auth/login", plain=True, body=b"fixture")[0] == 405
-        assert call("/friends/example/diary")[1]["cache-control"] == "no-store"
+        page_headers = call("/friends/example/diary")[1]
+        assert page_headers["cache-control"] == "no-store"
+        assert page_headers["permissions-policy"] == "camera=(self), microphone=(), geolocation=()"
+        assert "media-src 'self' blob:" in page_headers["content-security-policy"]
+        assert "img-src 'self' blob: data:" in page_headers["content-security-policy"]
         assert "immutable" in call("/assets/index-testingA.js")[1]["cache-control"]
         assert call("/assets/extra-xxxxxxxx.js")[0] == 404
         assert call("/assets/extra-xxxxxxxx.js")[1]["cache-control"] == "no-store"

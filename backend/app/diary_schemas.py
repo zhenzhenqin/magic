@@ -42,6 +42,7 @@ class MealInput(Input):
     note: MealNote = ""
     items: Annotated[list[ItemInput], Field(min_length=1, max_length=30)]
     media_ids: Annotated[list[UUID], Field(max_length=5)] = Field(default_factory=list)
+    original_media_ids: Annotated[list[UUID], Field(max_length=5)] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("timezone")
     @classmethod
@@ -63,6 +64,8 @@ class MealInput(Input):
     def validate_meal(self):
         if len(self.media_ids) != len(set(self.media_ids)):
             raise ValueError("Each image can appear only once per meal")
+        if self.original_media_ids is not None and not set(self.original_media_ids).issubset(self.media_ids):
+            raise ValueError("Original photos must be included in the meal")
         wall = datetime.combine(self.local_date, self.local_time)
         if self.eaten_at.astimezone(ZoneInfo(self.timezone)).replace(tzinfo=None) != wall:
             raise ValueError("This local time does not exist in the selected timezone")
@@ -109,6 +112,10 @@ class ItemView(BaseModel):
     ai_provider: str | None
 
 
+class MealMediaView(MediaView):
+    use_original: bool = False
+
+
 class MealView(BaseModel):
     id: UUID
     meal_type: MealType
@@ -118,7 +125,7 @@ class MealView(BaseModel):
     timezone: str
     note: str
     items: list[ItemView]
-    media: list[MediaView]
+    media: list[MealMediaView]
     version: int
     created_at: datetime
     updated_at: datetime
@@ -135,6 +142,7 @@ class CalendarDay(BaseModel):
     date: date
     meal_count: int
     representative_media_id: UUID | None = None
+    representative_use_original: bool = False
 
 
 class CalendarView(BaseModel):

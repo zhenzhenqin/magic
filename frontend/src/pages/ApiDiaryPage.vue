@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { BookOpen, CalendarDays, NotebookPen, Plus, Utensils } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { nutrientFields, useDiaryApi } from '../api/diaryRepository'
 import type { Meal, NutrientKey } from '../api/diaryRepository'
@@ -10,12 +10,16 @@ import PrivatePhoto from '../components/PrivatePhoto.vue'
 import { useApiDay } from '../composables/useApiDay'
 import { usePrivateQuery } from '../composables/usePrivateQuery'
 import { authMessage, useAuth } from '../stores/auth'
+import { useStickerPlacement } from '../stores/stickerPlacement'
 import { dayLabel, weekdayLabel, weekFor } from '../utils/dates'
 import { mealLabels } from '../utils/labels'
 
 const { selected, today, setDate } = useApiDay()
 const auth = useAuth()
 const api = useDiaryApi()
+const placement = useStickerPlacement()
+const notebook = ref<HTMLElement>()
+let cleanFlight: (() => void) | undefined
 const router = useRouter()
 const page = ref(1)
 const pageDay = ref('')
@@ -40,6 +44,50 @@ const visibleNutrients = computed(() => (Object.keys(nutrientFields) as Nutrient
   key === 'calories_kcal' ? auth.preferences?.show_calories : auth.preferences?.show_nutrition))
 
 const entries = computed(() => [...(results.value?.items ?? [])].sort((first, second) => first.local_time.localeCompare(second.local_time)))
+watch([entries, () => placement.pending], async ([rows, delivery]) => {
+  if (!delivery || !rows.some(row => row.id === delivery.meal)) return
+  await nextTick()
+  if (placement.pending !== delivery) return
+  const target = notebook.value?.querySelector<HTMLElement>(`[data-placement="${CSS.escape(delivery.meal)}"] [data-photo="${CSS.escape(delivery.media)}"]`)
+  if (!target) return
+  placement.clear()
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  cleanFlight?.()
+  const bounds = target.getBoundingClientRect()
+  if (!bounds.width || !bounds.height) return
+  const url = URL.createObjectURL(delivery.blob)
+  const image = new Image()
+  image.alt = ''
+  image.className = 'landing-sticker'
+  image.src = url
+  Object.assign(image.style, { left: `${bounds.left}px`, top: `${bounds.top}px`, width: `${bounds.width}px`, height: `${bounds.height}px` })
+  target.classList.add('landing-target')
+  target.append(image)
+  let movement: Animation | undefined
+  let finished = false
+  const finish = () => {
+    if (finished) return
+    finished = true
+    movement?.cancel()
+    image.remove()
+    target.classList.remove('landing-target')
+    URL.revokeObjectURL(url)
+  }
+  cleanFlight = finish
+  const { x = bounds.left, y = bounds.top, width = bounds.width, height = bounds.height } = delivery.from
+  const start = `translate(${x + (width - bounds.width) / 2 - bounds.left}px, ${y + (height - bounds.height) / 2 - bounds.top}px) scale(${Math.max(.55, Math.min(2.1, height / bounds.height))})`
+  if (typeof image.animate === 'function') {
+    movement = image.animate([{ transform: `${start} rotate(-3deg)` },
+      { transform: 'translateY(3px) scale(.96) rotate(3deg)', offset: .81 },
+      { transform: 'translateY(0) scale(1) rotate(-2deg)' }], { duration: 660, easing: 'cubic-bezier(.18,.73,.35,1)' })
+    void movement.finished.then(finish, finish)
+  } else {
+    image.style.setProperty('--landing-origin', start)
+    image.classList.add('landing-fallback')
+    image.addEventListener('animationend', finish, { once: true })
+  }
+}, { flush: 'post' })
+onScopeDispose(() => cleanFlight?.())
 const calories = computed(() => daily.value?.nutrition.calories_kcal)
 function captionCalories(entry: Meal) {
   const known = entry.items.filter(item => item.calories_kcal !== null)
@@ -83,7 +131,7 @@ async function remove(item: Meal) {
       <button type="button" class="text-action report-action" @click="reportOpen = true"><NotebookPen aria-hidden="true" /> 周报 <small>待开放</small></button>
     </header>
     <DateStrip notebook :selected="selected" :today="today" :recorded="recorded.current.value" @select="setDate" />
-    <section class="notebook-sheet" aria-labelledby="entries-heading">
+    <section ref="notebook" class="notebook-sheet" aria-labelledby="entries-heading">
         <header class="sheet-header">
           <div>
             <h2 id="entries-heading"><time :datetime="selected">{{ dayLabel(selected) }}</time> <small>{{ selected === today ? '今天' : weekdayLabel(selected) }}</small></h2>
@@ -109,10 +157,11 @@ async function remove(item: Meal) {
         </div>
         <div v-else>
           <div class="scrap-grid">
-            <button v-for="entry in entries" :key="entry.id" class="scrap"
+            <button v-for="entry in entries" :key="entry.id" class="scrap" :data-placement="entry.id"
               :aria-label="'查看记录 ' + entry.items.map(item => item.food_name).join('、')" @click="focused = entry.id">
               <span v-if="entry.media.length" class="scrap-gallery" :class="{ 'extra-photos': entry.media.length > 1 }">
-                <PrivatePhoto v-for="image in entry.media.slice(0, 3)" :key="image.id" :id="image.id" presentation="sticker" alt="" />
+                <PrivatePhoto v-for="image in entry.media.slice(0, 3)" :key="image.id" :id="image.id" :data-photo="image.id"
+                  :presentation="image.use_original ? undefined : 'sticker'" alt="" />
               </span>
               <span v-else class="text-scrap"><Utensils aria-hidden="true" /></span>
               <strong>{{ entry.items.map(item => item.food_name).join('、') }}</strong>
@@ -155,7 +204,7 @@ async function remove(item: Meal) {
       <template v-if="meal">
         <p class="caption">{{ meal.local_date }} · {{ mealLabels[meal.meal_type].label }} · {{ meal.local_time.slice(0, 5) }}</p>
         <div v-if="meal.media.length" class="detail-photos"><PrivatePhoto v-for="image in meal.media" :key="image.id" :id="image.id" original /></div>
-        <details v-if="meal.media.length"><summary>查看美食贴纸</summary><div class="detail-photos detail-stickers"><PrivatePhoto v-for="image in meal.media" :key="image.id" :id="image.id" presentation="sticker" alt="美食贴纸" /></div></details>
+        <details v-if="meal.media.some(image => !image.use_original)"><summary>查看美食贴纸</summary><div class="detail-photos detail-stickers"><PrivatePhoto v-for="image in meal.media.filter(image => !image.use_original)" :key="image.id" :id="image.id" presentation="sticker" alt="美食贴纸" /></div></details>
         <p v-if="meal.note">{{ meal.note }}</p>
         <article v-for="item in meal.items" :key="item.id" class="detail-item">
           <strong>{{ item.food_name }}</strong>
@@ -205,6 +254,10 @@ h1 { font: 700 clamp(1.6rem, 5vw, 2.65rem)/1.16 var(--font-serif); letter-spacin
 .scrap:nth-child(4n+3) .scrap-gallery { width: 87%; height: clamp(5.1rem, 21vw, 10rem); }
 .scrap-gallery.extra-photos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .extra-photos > :nth-child(n+3) { display: none; }
+:deep(.landing-target > img:not(.landing-sticker)) { opacity: 0; }
+:deep(.landing-sticker) { position: fixed; z-index: 5; pointer-events: none; object-fit: contain; filter: drop-shadow(0 3px 3px #4e382528); }
+:deep(.landing-fallback) { animation: landing .66s cubic-bezier(.18,.73,.35,1) both; }
+@keyframes landing { from { transform: var(--landing-origin) rotate(-3deg); } 81% { transform: translateY(3px) scale(.96) rotate(3deg); } to { transform: rotate(-2deg); } }
 .scrap strong { color: var(--diary-ink-soft); font: 600 clamp(1rem, 4.3vw, 1.52rem)/1.17 var(--font-hand); }
 .scrap-nutrition { color: #766e65; font: 500 clamp(.75rem, 2.9vw, .99rem) var(--font-hand); }
 .scrap-meal, .scrap-note { color: #74706a; font-size: .67rem; }

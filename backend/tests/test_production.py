@@ -103,6 +103,38 @@ def ledger(path):
         return dict(db.execute("SELECT provider,spent FROM ai_call_budgets"))
 
 
+def test_original_photo_preference_preserves_separate_friend_permissions(client, app, settings):
+    settings.sticker_enabled = True
+    settings.sticker_provider = "fake"
+    owner, viewer = [Peer(session.json()["user"]["public_id"], bearer(session))
+                     for session in (signed_in(client, "camera_owner"), signed_in(client, "camera_viewer"))]
+    connect(client, owner, viewer)
+    update(client, owner, viewer, records=True, names=True, stickers=True)
+    photo = put(client, owner.headers)
+    worker = StickerWorker(settings, app.state.session_factory)
+    try:
+        worker.heartbeat()
+        identifier = queue(client, owner.headers, photo)
+        assert worker.run_once() and job(client, owner.headers, identifier)["ready"]
+    finally:
+        worker.close()
+    request = sample(media_ids=[photo], original_media_ids=[photo])
+    entry = create(client, owner.headers, request).json()
+    assert entry["media"][0]["use_original"] is True
+    assert client.get(route(owner, "/meals/" + entry["id"]), headers=viewer.headers).json()["media"] == []
+    assert media(client, viewer, owner, photo, "/sticker", meal_id=entry["id"]).status_code == 404
+    assert media(client, viewer, owner, photo, "/thumbnail", meal_id=entry["id"]).status_code == 404
+    update(client, owner, viewer, records=True, names=True, photos=True, stickers=True)
+    assert client.get(route(owner, "/meals/" + entry["id"]), headers=viewer.headers).json()["media"] == [
+        {"id": photo, "kinds": ["photo"]},
+    ]
+    assert media(client, viewer, owner, photo, "/sticker", meal_id=entry["id"]).status_code == 404
+    assert media(client, viewer, owner, photo, "/thumbnail", meal_id=entry["id"]).status_code == 200
+    old_client = client.patch(API + "/meals/" + entry["id"], headers=owner.headers,
+                              json=sample(media_ids=[photo], version=entry["version"]))
+    assert old_client.json()["media"][0]["use_original"] is True
+
+
 def test_backup_restore_keeps_media_relationships_and_ledger_settings(client, app, settings, tmp_path, monkeypatch):
     settings.sticker_enabled = True
     settings.sticker_provider = "fake"
@@ -203,7 +235,7 @@ def test_migration_candidate_failure_preserves_live_release(settings, tmp_path, 
     copyfile(live, good)
     maintenance.migrate_candidate(good)
     with closing(maintenance.readonly(good)) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("0008_friend_sharing",)
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("0009_meal_photo_display",)
 
 
 def test_running_release_identity_follows_the_release_at_start(settings, tmp_path, monkeypatch):

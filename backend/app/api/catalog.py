@@ -21,6 +21,7 @@ class Entry(BaseModel):
     display_name: str
     category: str | None
     cover_media_id: UUID | None
+    cover_use_original: bool
     cover_whole_meal: bool
     is_favorite: bool
     first_eaten: date | None

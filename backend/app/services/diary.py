@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.config import Settings
 from app.core.database import utcnow
 from app.core.exceptions import ApiError
-from app.diary_schemas import CalendarDay, CalendarView, DailyView, ItemView, MealInput, MealPage, MealView, MediaView, NutrientSources, NutrientSummary
+from app.diary_schemas import CalendarDay, CalendarView, DailyView, ItemView, MealInput, MealMediaView, MealPage, MealView, NutrientSources, NutrientSummary
 from app.models.diary import Meal, MealItem, MealMedia, MealRequest, MediaAsset
 from app.models.stickers import MediaDerivative
 from app.services.catalog import sync_item
@@ -34,7 +34,8 @@ def serialize(meal: Meal) -> MealView:
         local_time=meal.eaten_at.astimezone(ZoneInfo(meal.timezone)).time(), timezone=meal.timezone,
         note=meal.note, version=meal.version, created_at=meal.created_at, updated_at=meal.updated_at,
         items=[ItemView.model_validate(item) for item in meal.items],
-        media=[MediaView.model_validate(link.asset) for link in meal.attachments],
+        media=[MealMediaView.model_validate(link.asset).model_copy(update={"use_original": link.use_original})
+               for link in meal.attachments],
     )
 
 
@@ -116,7 +117,10 @@ def update_items(db: Session, settings: Settings, owner: str, identifier: str, d
 
 
 def replace_details(db: Session, settings: Settings, owner: str, identifier: str, data: MealInput):
-    previous = db.scalars(select(MealMedia.media_id).where(MealMedia.meal_id == identifier)).all()
+    previous = dict(db.execute(select(MealMedia.media_id, MealMedia.use_original)
+                               .where(MealMedia.meal_id == identifier)).all())
+    original = ({str(media) for media in data.original_media_ids} if data.original_media_ids is not None
+                else {media for media, use_original in previous.items() if use_original})
     selected = [str(media) for media in data.media_ids]
     if selected:
         valid = set(db.scalars(select(MediaAsset.id).where(MediaAsset.user_id == owner, MediaAsset.id.in_(selected))))
@@ -125,7 +129,7 @@ def replace_details(db: Session, settings: Settings, owner: str, identifier: str
     update_items(db, settings, owner, identifier, data)
     db.execute(delete(MealMedia).where(MealMedia.meal_id == identifier))
     db.add_all([
-        MealMedia(user_id=owner, meal_id=identifier, media_id=asset, sort_order=index)
+        MealMedia(user_id=owner, meal_id=identifier, media_id=asset, sort_order=index, use_original=asset in original)
         for index, asset in enumerate(selected)
     ])
     db.flush()
@@ -147,6 +151,8 @@ def sync_media(db: Session, owner: str, media_ids: set[str]):
 
 def create(db: Session, settings: Settings, owner: str, key: str, data: MealInput) -> tuple[MealView, bool]:
     serialized = data.model_dump()
+    if not serialized.get("original_media_ids"):
+        serialized.pop("original_media_ids", None)  # Preserve fingerprints from earlier clients.
     for item in serialized["items"]:
         for name in ("id", "ai_reference"):
             if item[name] is None:
@@ -208,18 +214,20 @@ def calendar(db: Session, owner: str, month: str) -> CalendarView:
         raise ApiError(422, "invalid_month", "请输入有效月份。") from None
     dates = [Meal.user_id == owner, Meal.local_date >= first, Meal.local_date < following]
     ranking = select(
-        Meal.local_date.label("day"), MealMedia.media_id.label("image"),
+        Meal.local_date.label("day"), MealMedia.media_id.label("image"), MealMedia.use_original,
         func.row_number().over(partition_by=Meal.local_date,
                               order_by=(MediaDerivative.id.is_not(None).desc(), Meal.eaten_at.desc(), Meal.id.desc(),
                                         MealMedia.sort_order)).label("position"),
     ).join(MealMedia, MealMedia.meal_id == Meal.id).outerjoin(
-        MediaDerivative, (MediaDerivative.source_media_id == MealMedia.media_id) & (MediaDerivative.user_id == owner),
+        MediaDerivative, (MediaDerivative.source_media_id == MealMedia.media_id) & (MediaDerivative.user_id == owner)
+        & MealMedia.use_original.is_(False),
     ).where(*dates).subquery()
-    counts = db.execute(select(Meal.local_date, func.count(Meal.id), ranking.c.image)
+    counts = db.execute(select(Meal.local_date, func.count(Meal.id), ranking.c.image, ranking.c.use_original)
                         .outerjoin(ranking, (ranking.c.day == Meal.local_date) & (ranking.c.position == 1))
-                        .where(*dates).group_by(Meal.local_date, ranking.c.image).order_by(Meal.local_date)).all()
+                        .where(*dates).group_by(Meal.local_date, ranking.c.image, ranking.c.use_original).order_by(Meal.local_date)).all()
     return CalendarView(month=month, days=[
-        CalendarDay(date=day, meal_count=count, representative_media_id=image) for day, count, image in counts
+        CalendarDay(date=day, meal_count=count, representative_media_id=image, representative_use_original=bool(original))
+        for day, count, image, original in counts
     ])
 
 

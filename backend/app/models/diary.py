@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Date, ForeignKey, ForeignKeyConstraint, Index, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Date, ForeignKey, ForeignKeyConstraint, Index, Numeric, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base, UTCDateTime, utcnow
@@ -90,6 +90,7 @@ class MealMedia(Base):
     meal_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     media_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     sort_order: Mapped[int]
+    use_original: Mapped[bool] = mapped_column(server_default=false())
     asset: Mapped[MediaAsset] = relationship(viewonly=True)
 
 
