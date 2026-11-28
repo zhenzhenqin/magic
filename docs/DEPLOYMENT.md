@@ -24,9 +24,13 @@
 
 优先使用用户控制的域名及受信任证书。确认 DNS、ECS 地域、云安全组、现有站点和自动续签。中国大陆节点须依接入商要求确认网站备案或接入手续，IP 直连也需确认适用要求。 [华为云备案说明](https://support.huaweicloud.com/icp_faq/icp_05_0145.html)
 
+本实例由用户确认为华为云 Flexus L 上海一，暂时没有域名或可核实的备案。免费 IP 证书的技术验证与公网接入授权独立。安全宿主机就绪后，可用已获准的可信私网入口。无现成入口时，可评估免费 Tailscale 方案，先在实际手机和服务器验证连通性及个人套餐条件。为 MagicDNS 全名签发证书，Nginx 仅绑定私网地址和回环，以保留现有发布维护检查。保持关闭公网 80 和 443，关闭 Funnel，内测访问限授权成员。实际验证精确 Origin、证书续签、Nginx 重载和私网维护门禁后再创建账号。 [华为云备案限制](https://support.huaweicloud.com/icprb-icp/icp_01_0008.html) · [Tailscale HTTPS](https://tailscale.com/docs/how-to/set-up-https-certificates)
+
 没有域名时，技术上可评估 Let's Encrypt 公网 IPv4 证书。其有效期为六天，采用 Webroot 验证时官方要求 Certbot 5.4 或以上。需先确认 80 的 ACME 验证可达、证书更新和 Nginx 重载有效，以及获得相应公网许可。测试签发环境证书只作连通性验证。另一方案是通过已有可授权私网和带可信证书的入口限设备访问。普通公网 HTTP 仅可用作安全跳转或 ACME 验证。 [IP 证书及 Certbot](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)
 
 Nginx 模板由 `render-nginx.py` 生成独立站点，包含 HTTPS、固定主机名的跳转、同源代理、SPA 路由、媒体和隐藏路径拦截、TLS 响应头、10 MiB + 128 KiB 请求体上限及 130 秒代理时限。Nginx 禁用 API 上游缓存，覆盖其缓存响应头为 `no-store`。版本化哈希文件使用 30 天缓存。可信代理以清洗后的来源地址传递给 Uvicorn。反代验证保留真实 CA 校验。维护时只允许该站点的 `503` 与专用响应头通过维护验证。
+
+相机需要页面本身的受信任 HTTPS。入口验证同时检查 `Permissions-Policy` 的 `camera=(self)`，以及 `Content-Security-Policy` 对 Blob 预览和实时媒体的允许范围。 [相机权限与兼容](CAMERA.md)
 
 ## 配置、密钥和账号
 

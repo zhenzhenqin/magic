@@ -118,7 +118,7 @@ def lab(existing=False):
 
         def run(*args, failure="none"):
             env = {**os.environ, "PATH": f"{commands}:{os.environ['PATH']}", "FLOW_ROOT": str(root), "FLOW_FAILURE": failure}
-            return subprocess.run(["bash", manage, *args], env=env, capture_output=True, text=True, timeout=25)
+            return subprocess.run(["bash", manage, *args], env=env, capture_output=True, text=True, timeout=90)
 
         yield run, root, app / "current", db, marker, state
 

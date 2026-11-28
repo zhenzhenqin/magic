@@ -1,6 +1,6 @@
 # FoodDiary 阶段 7.2 发布验证与 Web 内测状态
 
-阶段 7.1 审核基准为 `8d12f320e8269eb923bfb718ad44856a2aa68753`。本轮完成部署整改、只读复查和本地演练。宿主机变更及公网开放需要另行授权，真实 Web 内测尚未开始。
+本报告保留阶段 7.2 部署整改证据，并追加应用内拍摄任务。当前审核基准为 `eac87463446db37398764844e817011cc7d7f907`。目标机真实部署和手机内测尚未完成。
 
 ## 1. 宿主机实际状态
 
@@ -110,3 +110,57 @@ Exam Guardian 的 7 个容器均处于退出状态，4 个镜像与持久卷仍�
 ## 17. 内测验收结论
 
 服务器现状已复查。当前交付处于部署准备及验证范围，尚未达到真实 Web 内测验收条件。
+
+## 18. 摄像头追加任务与实际授权
+
+用户补充确认实例为华为云 Flexus 应用服务器 L，上海一 `cn-east-3`，2 核、2 GiB、40 GiB 系统盘、2 Mbit/s 峰值和 100 GB 流量包。系统实测仍以此前 Debian 11、Python 3.9.2 和 26 GiB 可用的只读记录为准，没有重复登录盘点。本轮没有安装软件、改端口、重启主机或覆盖旧业务。Exam Guardian 应在空间允许时保留停运，本轮没有迁出旧业务，异盘恢复和 VNC 救援权限仍待确认。
+
+已获条件授权，在宿主机满足安全要求后安装免费依赖、Nginx、Certbot、Python，部署 FoodDiary、配置证书及 systemd 备份。若满足公网接入要求，可开放 TCP 80 和 443，继续保留 SSH 22。用户明确将系统升级、重装、整机重启和旧项目删除留待单独授权。
+
+用户当前没有域名。Let's Encrypt 免费 IP 证书只满足 TLS 信任，华为云大陆网站仍需先完成适用备案及接入核验。`https://113.44.64.113` 是拟用地址，当前未部署。初期可在安全宿主机上核验只允许内测成员访问的可信私网 HTTPS。未确认符合华为云接入要求之前，公网 80 与 443 不启用。 [华为云备案条件](https://support.huaweicloud.com/icp_faq/icp_05_0145.html) · [华为云控制台 VNC](https://support.huaweicloud.com/usermanual-flexusl/server_login_0002.html) · [IP 证书](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)
+
+## 19. 拍照闭环、测试平台和性能
+
+Web 使用真实 MediaDevices API。快门将当前帧 Canvas 编码为单张图片，上传到现有私有媒体接口并自动提交贴纸。抠图就绪后使用真实透明产物和白边贴纸播放转场，餐次成功保存后按实际目标位置播放入账。支持补光能力检查、镜头切换、后台释放、相册降级、保留原图、手动填写和减少动态效果。AI 保持关闭，第三方识别仍须按按钮并确认。阶段 8 的 CameraProvider、系统相机与自定义取景适配范围已记录。 [实现和 Android 计划](CAMERA.md)
+
+| 验证 | 实际结果 |
+| --- | --- |
+| Windows Chrome 390×844 | 7 项专项用例通过。真实 Web API、文件驱动的虚拟摄像头、真实本机 ONNX Worker。覆盖轨道释放、权限拒绝、无设备、相册、自动提交、Alpha、在途保存、相机切换、重拍、断网恢复、跳过动画、账号隔离、保存失败与重复点击 |
+| 好友 | 两个独立本地浏览器会话通过。授权好友在正式保存前看不到草稿，保存后读到新贴纸，撤销后同一媒体地址返回 404。后端测试还覆盖显式原图选择与贴纸和原图权限分离 |
+| 浏览器用时 | 一次 640×480 虚拟拍摄影像测得取景 0.911 秒、快门到上传响应 0.648 秒、快门到贴纸下载响应 10.264 秒，JPEG 90,041 字节。在同机并行运行其他回归时采样，包含 Worker 排队及轮询等待，未达到 5 秒端到端参考目标 |
+| WSL Linux 实际 ONNX | 现有权重，Python 3.13.18、ONNX Runtime CPU 单线程。会话冷加载 0.513 秒，三张无隐私样例各跑三次。768 px 推理与两种 WebP 编码合计 1.074–2.358 秒，512 px 为 0.869–2.696 秒，全程峰值 RSS 365.1 MiB。两个 768 px 派生图共约 251–701 KiB |
+| 后端 | 219 项 pytest 通过，1 条已知 Starlette 测试客户端弃用提示。Alembic 新迁移及 `alembic check` 通过，旧幂等键和原有数据回归通过 |
+| 原有浏览器回归 | 47 项通过，分别为 Demo 12、API 14、贴纸 2、本地模拟 Worker 共享 2、真实本机 ONNX 共享 2、AI 9、AI 恢复 5、AI Worker 离线 1。加上拍照专项合计 54 项 |
+| 构建及 WSL 发布回归 | TypeScript、API 与 Demo 生产构建通过。Bash、Nginx 可信测试证书与相机安全响应头、发布回滚、强制中断恢复通过。新的发布包在 WSL 完成真实 Linux 离线安装、非 root systemd 启动、原子版本核验和空库隔离恢复 |
+| 真实设备及生产 | Android Chrome、iPhone Safari、手机实际摄像头及补光、2 Mbit/s 云机延迟、并发和备份定时触发、隔离恢复均待目标机及真机复测 |
+
+Windows 与 WSL 指标反映本机负载。云服务器实际 CPU、内存、Swap、磁盘持续增长、API P95、SQLite 并发、重启持久化和带负载抠图尚未实测。阶段 7.2 真实收费 AI 累计 0 次，费用 0 元。
+
+## 20. 模型证据和启用条件
+
+本地 `u2netp.onnx` 为 4,574,861 字节，SHA-256 `309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8`，文件名和体积与 rembg `v0.0.0` 发布记录一致。U²-Net 作者说明公开发布的代码和模型同一许可，仓库采用 Apache-2.0，同时确认 u2netp 使用 DUTS 并提示应用方核查数据集许可。DUTS 官方页未发现明确商业许可，精确 rembg ONNX 资产的独立生产说明未确认。继续保留本地评估，权重未打包，云端未开启。备用候选 withoutBG 提供公开 ONNX 条款，结合 DINOv3 条款且需进一步测量低配 CPU 和内存，本轮未切换。 [上游模型许可说明](https://github.com/xuebinqin/U-2-Net/issues/208) · [DUTS](https://saliencydetection.net/duts/) · [rembg 权重来源](https://github.com/danielgatis/rembg/releases/tag/v0.0.0) · [withoutBG 许可](https://withoutbg.com/open-model/license)
+
+## 21. 实际截图和录屏
+
+截图与视频均来自当前应用的本地运行，测试用合成餐桌示例和独立测试账号。真实 CPU ONNX 生成派生文件。摄像头视频输入为已有授权样例制作的 Y4M，尚无真机录屏。D 盘原始记录位于 `D:/DevEnv/fooddiary-phase72-camera/evidence/`。已核验三个 WebM，时长分别为 13.92、22.44 和 21.80 秒。
+
+| 实际证据 | 文件 |
+| --- | --- |
+| 实时取景与快门 | [取景](screenshots/phase-7.2-camera/01-preview.png) · [拍摄](screenshots/phase-7.2-camera/02-captured.png) |
+| 真实贴纸动画 | [等待扫描](screenshots/phase-7.2-camera/03-extracting.png) · [轮廓与背景变淡](screenshots/phase-7.2-camera/04-real-outline.png) · [白边成品](screenshots/phase-7.2-camera/05-final-sticker.png) · [A 录屏](screenshots/phase-7.2-camera/A-capture-to-real-sticker.webm) |
+| 成功保存及贴纸入账 | [入账动画](screenshots/phase-7.2-camera/06-sticker-landing.png) · [B 录屏](screenshots/phase-7.2-camera/B-save-and-place.webm) |
+| 权限拒绝与相册降级 | [权限拒绝](screenshots/phase-7.2-camera/07-permission-denied.png) · [C 录屏](screenshots/phase-7.2-camera/C-permission-fallback.webm) |
+| 好友查看新贴纸 | [授权好友手账](screenshots/phase-7.2-camera/08-friend-real-sticker.png) |
+
+## 22. 当前候选包与验收结论
+
+摄像头实现提交为 `2237cf5b1440fa4a826e82223070550614e70f4a`。D 盘候选包 `D:/DevEnv/fooddiary-phase72-camera/releases/2237cf5b1440fa4a826e82223070550614e70f4a`，核验 133 个清单条目。证据及汇报另成提交，以远端分支顶端为准。报告中的候选 SHA 尚无实际目标机运行记录。 [GitHub 原分支](https://github.com/zhenzhenqin/magic/tree/feature/phase-7-deployment)
+
+追加任务的整盘采样如下。测试浏览器缓存、截图、录屏、数据库、发布包和 WSL 虚拟磁盘均使用 D 盘，系统本身的其他活动也会影响整盘数据。
+
+| 磁盘 | 开工可用字节 | 结束可用字节 | 可用空间变化 |
+| --- | ---: | ---: | ---: |
+| C | 30,074,646,528 | 29,966,262,272 | 减少 103.4 MiB |
+| D | 336,172,769,280 | 330,732,961,792 | 减少约 5.07 GiB |
+
+应用内拍照和贴纸动画具备本地证据。阶段 7.2 完整验收仍需经批准的宿主机维护与旧业务恢复验证、可信 HTTPS 部署、手机摄像头、跨真实设备同步和生产资源及恢复数据。未部署前不进入阶段 8。

@@ -93,3 +93,4 @@ Playwright 使用本机 Chrome，API 测试自动启动独立的后端及临时�
 - [阶段 4 汇报与截图](docs/PHASE-4.md)及[AI 食物识别](docs/AI.md)
 - [阶段 7.1 汇报](docs/PHASE-7.1.md)、[部署说明](docs/DEPLOYMENT.md)及[备份恢复](docs/BACKUP-RESTORE.md)
 - [阶段 7.2 部署状态与验收记录](docs/PHASE-7.2.md)
+- [应用内拍照、贴纸和 Android 适配](docs/CAMERA.md)
