@@ -371,12 +371,15 @@ function keepAsManual() {
           </label>
           <div class="toolbar">
             <button type="button" class="text-action" :disabled="!!progress" @click="retake">重新拍摄</button>
-            <button type="button" class="text-action" :disabled="!!progress" @click="removePhoto(photos.indexOf(captured))">取消这张照片</button>
             <button v-if="uploadFailed && !captured.id" type="button" class="text-action" :disabled="!!progress" @click="uploadCaptured(captured)">重试上传</button>
             <button v-if="!captured.useOriginal" type="button" class="text-action" :disabled="!!progress" @click="captured.useOriginal = true">使用原图</button>
             <button v-else-if="featured?.job?.ready" type="button" class="text-action" :disabled="!!progress" @click="captured.useOriginal = false">使用贴纸</button>
-            <button v-if="captured.id && stickersOnline && !featured?.busy && !stickerRunning(featured?.job)" type="button" class="text-action" :disabled="!!progress"
-              @click="captured.useOriginal = false; runSticker(captured, featured?.job ? 'retry' : 'make')">重新抠图</button>
+            <details class="capture-more">
+              <summary>更多照片操作</summary>
+              <button type="button" class="text-action" :disabled="!!progress" @click="removePhoto(photos.indexOf(captured))">取消这张照片</button>
+              <button v-if="captured.id && stickersOnline && !featured?.busy && !stickerRunning(featured?.job)" type="button" class="text-action" :disabled="!!progress"
+                @click="captured.useOriginal = false; runSticker(captured, featured?.job ? 'retry' : 'make')">重新抠图</button>
+            </details>
           </div>
         </section>
         <div v-if="photos.some(photo => photo.key !== captured?.key)" class="previews" aria-label="上传预览">
@@ -541,6 +544,7 @@ function keepAsManual() {
 
 <style scoped>
 .capture-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); align-items: start; gap: 1rem; }
+.capture-more { color: var(--color-muted); font-size: .8rem; }
 h2, legend { font: 700 1.17rem var(--font-serif); }
 fieldset { min-width: 0; }
 .previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }

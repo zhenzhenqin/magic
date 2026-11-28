@@ -235,7 +235,7 @@ def test_migration_candidate_failure_preserves_live_release(settings, tmp_path, 
     copyfile(live, good)
     maintenance.migrate_candidate(good)
     with closing(maintenance.readonly(good)) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("0009_meal_photo_display",)
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("0010_sticker_timings",)
 
 
 def test_running_release_identity_follows_the_release_at_start(settings, tmp_path, monkeypatch):

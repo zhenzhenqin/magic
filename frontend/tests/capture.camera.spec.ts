@@ -58,11 +58,20 @@ const trackStates = (page: Page) => page.evaluate(() => {
 test('A 实时预览、照片上传和 CPU ONNX 真轮廓', async ({ page }) => {
   await monitor(page)
   await login(page)
+  const bandwidth = Number(process.env.FOODDIARY_CAMERA_BANDWIDTH_KBPS ?? 0)
+  if (bandwidth > 0) {
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 40,
+      downloadThroughput: bandwidth * 125, uploadThroughput: bandwidth * 125 })
+  }
   let uploads = 0
   let jobs = 0
+  const imageRequests: string[] = []
   page.on('request', request => {
     if (known('/media/upload', 'POST', request)) uploads++
     if (known('/stickers/jobs', 'POST', request)) jobs++
+    const path = new URL(request.url()).pathname
+    if (path.startsWith('/api/v1/media/') && path.includes('/sticker')) imageRequests.push(path.split('/').slice(5).join('/'))
   })
   const start = Date.now()
   await open(page)
@@ -75,7 +84,9 @@ test('A 实时预览、照片上传和 CPU ONNX 真轮廓', async ({ page }) => 
   expect(uploads).toBe(0)
   await screen(page, '01-preview')
   const uploaded = page.waitForResponse(response => known('/media/upload', 'POST', response.request()))
-  const sticker = page.waitForResponse(response => /\/sticker$/.test(new URL(response.url()).pathname))
+  const ready = page.waitForResponse(async response => new URL(response.url()).pathname.includes('/stickers/jobs/')
+    && response.ok() && (await response.json()).status === 'succeeded')
+  const sticker = page.waitForResponse(response => /\/sticker\/thumbnail$/.test(new URL(response.url()).pathname))
   const captureTime = Date.now()
   await shutter(page).tap()
   const frozen = page.getByRole('img', { name: '刚刚拍下的照片' })
@@ -100,6 +111,11 @@ test('A 实时预览、照片上传和 CPU ONNX 真轮廓', async ({ page }) => 
   expect(stickerResponse.ok()).toBeTruthy()
   expect(new URL(stickerResponse.url()).pathname).toContain(id)
   const workerEnd = Date.now()
+  const { timings } = await (await ready).json()
+  expect(timings.queue_ms).toBeGreaterThanOrEqual(0)
+  expect(timings.inference_ms).toBeGreaterThan(0)
+  expect(timings.encode_ms).toBeGreaterThan(0)
+  expect(timings.ready_age_ms).toBeGreaterThanOrEqual(0)
   const outline = page.locator('.cutout-outline img')
   await expect(outline).toHaveAttribute('src', /^blob:/)
   await page.waitForFunction(() => {
@@ -120,7 +136,15 @@ test('A 实时预览、照片上传和 CPU ONNX 真轮廓', async ({ page }) => 
   await expect(page.locator('.capture-stage')).toHaveAttribute('data-stage', 'ready')
   await screen(page, '05-final-sticker')
   expect({ uploads, jobs }).toEqual({ uploads: 1, jobs: 1 })
-  console.log(JSON.stringify({ previewMs, captureToUploadMs: uploadMs, captureToStickerMs: workerEnd - captureTime, bytes }))
+  expect(imageRequests).toEqual(['sticker/thumbnail'])
+  const preview = await page.evaluate(() => Object.fromEntries(['fooddiary-sticker-download', 'fooddiary-sticker-decode'].map(name => {
+    const metric = performance.getEntriesByName(name).at(-1) as PerformanceMeasure
+    return [name, { ms: Math.round(metric.duration), ...metric.detail }]
+  })))
+  const networkUpload = response.request().timing()
+  const uploadNetworkMs = Math.round(networkUpload.responseEnd - networkUpload.requestStart)
+  console.log(JSON.stringify({ bandwidth, previewMs, captureToUploadMs: uploadMs, uploadNetworkMs,
+    captureToStickerMs: workerEnd - captureTime, bytes, timings, preview }))
 })
 
 test('B 保存失败保持草稿，恢复后只创建一餐并播放入账', async ({ page }) => {

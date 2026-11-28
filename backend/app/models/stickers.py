@@ -25,6 +25,7 @@ class StickerJob(Base):
     claim: Mapped[str | None] = mapped_column(String(36))
     lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
     error_code: Mapped[str | None] = mapped_column(String(32))
+    timings: Mapped[dict[str, int] | None] = mapped_column(JSON(none_as_null=True))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 

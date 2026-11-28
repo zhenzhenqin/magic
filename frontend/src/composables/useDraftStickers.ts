@@ -41,7 +41,7 @@ export function useDraftStickers(photos: () => DraftPhoto[], upload: (photo: Dra
     if (!states[key]) states[key] = { busy: false, error: false, mode: 'original' }
     return states[key]
   }
-  function update(key: string, job: StickerJob | null, controller: AbortController) {
+  function update(key: string, job: StickerJob | null, controller: AbortController, polls = 0) {
     if (controller.signal.aborted) return
     const current = state(key)
     const fresh = job?.ready && job.result_id !== current.job?.result_id
@@ -51,11 +51,11 @@ export function useDraftStickers(photos: () => DraftPhoto[], upload: (photo: Dra
     if (!stickerRunning(job) || !job) return
     timers.set(key, setTimeout(async () => {
       try {
-        update(key, await api.job(job.id, controller.signal), controller)
+        update(key, await api.job(job.id, controller.signal), controller, polls + 1)
       } catch {
         if (!controller.signal.aborted) current.error = true
       }
-    }, 1150))
+    }, polls < 8 ? 650 : 1150))
   }
   async function run(photo: DraftPhoto, action: 'read' | 'make' | 'retry' | 'cancel', crop?: Crop) {
     const current = state(photo.key)

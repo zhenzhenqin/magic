@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from hashlib import file_digest
 from io import BytesIO
 from pathlib import Path
+from time import perf_counter_ns
 from typing import Protocol
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
@@ -64,6 +65,7 @@ class FakeBackgroundRemovalProvider:
 class StickerImages:
     cutout: Image.Image
     sticker: Image.Image
+    inference_ms: int = 0
 
     def thumbnail(self, edge: int) -> Image.Image:
         result = self.sticker.copy()
@@ -92,6 +94,7 @@ def rounded_outline(cutout: Image.Image) -> Image.Image:
 
 def make_sticker(source: Image.Image, edge: int, provider: BackgroundRemovalProvider | None, crop=None) -> StickerImages:
     image = source.convert("RGBA")
+    inference_ms = 0
     if crop:
         left, top, width, height = crop
         box = (round(left * image.width), round(top * image.height),
@@ -108,7 +111,10 @@ def make_sticker(source: Image.Image, edge: int, provider: BackgroundRemovalProv
         matte.paste(image, mask=original_alpha)
         if max(high - low for low, high in matte.getextrema()) < 6:
             raise StickerImageError("foreground_uncertain")
-        mask = provider.mask(matte).convert("L").resize(image.size, Image.Resampling.LANCZOS)
+        started = perf_counter_ns()
+        mask = provider.mask(matte)
+        inference_ms = (perf_counter_ns() - started) // 1_000_000
+        mask = mask.convert("L").resize(image.size, Image.Resampling.LANCZOS)
         mask = mask.point(lambda value: 0 if value < 20 else 255 if value > 236 else value)
         mask = ImageChops.multiply(mask, original_alpha)
         foreground = mask.point(lambda value: 255 if value >= 128 else 0)
@@ -120,4 +126,4 @@ def make_sticker(source: Image.Image, edge: int, provider: BackgroundRemovalProv
     if bounds is None:
         raise StickerImageError("foreground_uncertain")
     cropped = image.crop(bounds)
-    return StickerImages(cropped, rounded_outline(cropped))
+    return StickerImages(cropped, rounded_outline(cropped), inference_ms)

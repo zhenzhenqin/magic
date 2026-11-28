@@ -57,9 +57,11 @@ def owned_job(db, owner, identifier):
 
 def public(db, job):
     result = derivative(db, job.user_id, job.source_media_id)
+    timings = ({**job.timings, "ready_age_ms": max(0, int((utcnow() - job.updated_at).total_seconds() * 1000))}
+               if job.timings and job.status == "succeeded" else None)
     return dict(id=job.id, media_id=job.source_media_id, status=job.status, error_code=job.error_code,
                 attempts=job.attempts, ready=result is not None,
-                manual=bool(job.crop), result_id=result.id if result else None)
+                manual=bool(job.crop), result_id=result.id if result else None, timings=timings)
 
 
 def queue(db, settings, storage, owner, media_id, crop=None, *, force=False):
@@ -89,6 +91,7 @@ def queue(db, settings, storage, owner, media_id, crop=None, *, force=False):
         db.add(job)
     job.recipe, job.source_digest, job.crop = recipe, asset.sha256, crop
     job.status, job.attempts, job.claim, job.lease_until, job.error_code, job.updated_at = "pending", 0, None, None, None, now
+    job.timings = None
     db.flush()
     response = public(db, job)
     db.commit()

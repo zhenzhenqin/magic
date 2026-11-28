@@ -4,6 +4,7 @@ import multiprocessing
 from dataclasses import dataclass
 from datetime import timedelta
 from hashlib import sha256
+from time import perf_counter_ns
 from uuid import uuid4
 
 from PIL import Image
@@ -23,10 +24,23 @@ from app.services.storage import LocalStorageProvider, lock_owner, release_media
 LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class RenderedSticker:
+    dimensions: tuple[int, int]
+    files: tuple[bytes, bytes, bytes]
+    image_ms: int
+    inference_ms: int
+    encode_ms: int
+
+
 def render(source, provider, edge, thumbnail_edge, crop):
+    started = perf_counter_ns()
     with Image.open(io.BytesIO(source), formats=["WEBP"]) as original:
         pieces = make_sticker(original, edge, provider, crop)
-        return (pieces.sticker.size, encode(pieces.sticker), encode(pieces.cutout), encode(pieces.thumbnail(thumbnail_edge)))
+        encoding = perf_counter_ns()
+        files = encode(pieces.sticker), encode(pieces.cutout), encode(pieces.thumbnail(thumbnail_edge))
+    return RenderedSticker(pieces.sticker.size, files, (encoding - started) // 1_000_000 - pieces.inference_ms,
+                           pieces.inference_ms, (perf_counter_ns() - encoding) // 1_000_000)
 
 
 def inference_child(pipe, directory, threads, edge, thumbnail_edge):
@@ -38,11 +52,14 @@ def inference_child(pipe, directory, threads, edge, thumbnail_edge):
             except EOFError:
                 return
             try:
-                if not crop and provider is None:
+                if provider is None and (source is None or not crop):
                     try:
                         provider = OnnxBackgroundRemovalProvider(directory, threads)
                     except Exception:
                         raise StickerImageError("model_unavailable") from None
+                if source is None:
+                    pipe.send((True, None))
+                    continue
                 pipe.send((True, render(source, None if crop else provider, edge, thumbnail_edge, crop)))
             except StickerImageError as error:
                 pipe.send((False, str(error)))
@@ -70,7 +87,7 @@ class ProcessInference:
             self.process.close()
             self.process = None
 
-    def __call__(self, source, crop, tick):
+    def ensure_started(self):
         if self.process is None or not self.process.is_alive():
             self.close()
             self.pipe, child = self.context.Pipe()
@@ -80,6 +97,21 @@ class ProcessInference:
             ))
             self.process.start()
             child.close()
+
+    def warm(self):
+        self.ensure_started()
+        try:
+            self.pipe.send((None, None))
+            if not self.pipe.poll(self.settings.sticker_timeout_seconds):
+                raise StickerImageError("inference_timeout")
+            ok, code = self.pipe.recv()
+            if not ok:
+                raise StickerImageError(code)
+        except (EOFError, OSError):
+            raise StickerImageError("model_unavailable") from None
+
+    def __call__(self, source, crop, tick):
+        self.ensure_started()
         try:
             self.pipe.send((source, crop))
             for remaining in range(self.settings.sticker_timeout_seconds, 0, -1):
@@ -106,6 +138,7 @@ class Claim:
     recipe: str
     digest: str
     crop: list[float] | None
+    queue_ms: int
 
 
 class StickerWorker:
@@ -123,6 +156,10 @@ class StickerWorker:
     def close(self):
         if isinstance(self.processor, ProcessInference):
             self.processor.close()
+
+    def warm(self):
+        if isinstance(self.processor, ProcessInference):
+            self.processor.warm()
 
     @staticmethod
     def mark(db, now):
@@ -157,7 +194,8 @@ class StickerWorker:
             job.status, job.claim, job.error_code = "running", str(uuid4()), None
             job.attempts += 1
             job.lease_until = now + timedelta(seconds=self.settings.sticker_timeout_seconds + 15)
-            return Claim(job.id, job.user_id, job.source_media_id, job.claim, job.recipe, job.source_digest, job.crop)
+            queue_ms = max(0, int((now - job.updated_at).total_seconds() * 1000))
+            return Claim(job.id, job.user_id, job.source_media_id, job.claim, job.recipe, job.source_digest, job.crop, queue_ms)
 
     def source(self, claim):
         with self.sessions() as db:
@@ -173,7 +211,7 @@ class StickerWorker:
             raise StickerImageError("source_invalid")
         return data
 
-    def finish(self, claim, output=None, *, error=None):
+    def finish(self, claim, output=None, *, error=None, processing_ms=0):
         stem = uuid4().hex
         kinds = ("sticker", "cutout", "sticker-thumb")
         temp = tuple(f"staging/{stem}-{kind}.webp" for kind in kinds)
@@ -182,7 +220,7 @@ class StickerWorker:
         reservation = None
         try:
             if output:
-                dimensions, *files = output
+                dimensions, files = output.dimensions, output.files
                 size = sum(map(len, files))
                 root = self.storage.root
                 try:
@@ -225,6 +263,9 @@ class StickerWorker:
                 for source, destination in zip(temp, keys, strict=True):
                     self.storage.publish(source, destination)
                 job.status, job.error_code = "succeeded", None
+                job.updated_at = utcnow()
+                job.timings = {"queue_ms": claim.queue_ms, "image_ms": output.image_ms, "inference_ms": output.inference_ms,
+                               "encode_ms": output.encode_ms, "processing_ms": processing_ms}
             self.storage.discard(*old_keys)
         except Exception:
             if output:
@@ -244,8 +285,9 @@ class StickerWorker:
         try:
             if configuration(self.settings, claim.crop)[2] != claim.recipe:
                 raise StickerImageError("configuration_changed")
+            started = perf_counter_ns()
             output = self.processor(self.source(claim), claim.crop, self.heartbeat)
-            self.finish(claim, output)
+            self.finish(claim, output, processing_ms=(perf_counter_ns() - started) // 1_000_000)
         except StickerImageError as error:
             self.finish(claim, error=str(error))
         except Exception:

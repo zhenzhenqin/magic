@@ -37,6 +37,15 @@ class Retry(Input):
     crop: Crop | None = None
 
 
+class Timings(BaseModel):
+    queue_ms: int
+    image_ms: int
+    inference_ms: int
+    encode_ms: int
+    processing_ms: int
+    ready_age_ms: int
+
+
 class Job(BaseModel):
     id: UUID
     media_id: UUID
@@ -46,6 +55,7 @@ class Job(BaseModel):
     ready: bool
     manual: bool
     result_id: UUID | None
+    timings: Timings | None = None
 
 
 class Capabilities(BaseModel):

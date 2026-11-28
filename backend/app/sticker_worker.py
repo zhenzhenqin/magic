@@ -14,6 +14,7 @@ def main():
     engine = build_engine(settings.db_url)
     worker = StickerWorker(settings, sessionmaker(engine, expire_on_commit=False))
     try:
+        worker.warm()
         while True:
             if not worker.run_once():
                 time.sleep(1)

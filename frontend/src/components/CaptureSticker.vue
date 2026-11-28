@@ -5,7 +5,6 @@ import { useStickerApi } from '../api/stickerRepository'
 const props = defineProps<{ source: string; media?: string; revision?: string | null; extracting: boolean; original: boolean }>()
 const stickers = useStickerApi()
 const image = ref<HTMLImageElement>()
-const cutout = ref('')
 const sticker = ref('')
 const artifact = shallowRef<Blob>()
 const revealing = ref(false)
@@ -20,29 +19,32 @@ function placement() {
 }
 defineExpose({ placement })
 
-watch(() => [props.media, props.revision, retry.value] as const, async ([media, revision], _, cleanup) => {
-  cutout.value = sticker.value = ''
+watch(() => [props.media, props.revision, props.original, retry.value] as const, async ([media, revision, original], _, cleanup) => {
+  sticker.value = ''
   artifact.value = undefined
   revealing.value = failure.value = false
-  if (!media || !revision) return
+  if (!media || !revision || original) return
   const controller = new AbortController()
-  const urls: string[] = []
-  cleanup(() => { controller.abort(); urls.forEach(url => URL.revokeObjectURL(url)) })
+  let url = ''
+  cleanup(() => { controller.abort(); if (url) URL.revokeObjectURL(url) })
   try {
-    const [outline, paper] = await Promise.all([stickers.image(media, 'cutout', controller.signal), stickers.image(media, 'sticker', controller.signal)])
+    const requested = performance.now()
+    const paper = await stickers.image(media, 'thumbnail', controller.signal)
     if (controller.signal.aborted) return
-    const assets = [outline, paper].map(blob => {
-      const bitmap = new Image()
-      const url = URL.createObjectURL(blob)
-      urls.push(url)
-      bitmap.src = url
-      return bitmap.decode()
-    })
-    await Promise.all(assets)
+    const received = performance.now()
+    const bitmap = new Image()
+    url = URL.createObjectURL(paper)
+    bitmap.src = url
+    await bitmap.decode()
     if (controller.signal.aborted) return
+    const decoded = performance.now()
+    performance.clearMeasures('fooddiary-sticker-download')
+    performance.clearMeasures('fooddiary-sticker-decode')
+    performance.measure('fooddiary-sticker-download', { start: requested, end: received, detail: { bytes: paper.size } })
+    performance.measure('fooddiary-sticker-decode', { start: received, end: decoded })
     artifact.value = paper
     revealing.value = !skipped.value && !props.original && !matchMedia('(prefers-reduced-motion: reduce)').matches
-    ;[cutout.value, sticker.value] = urls
+    sticker.value = url
   } catch { if (!controller.signal.aborted) failure.value = true }
 }, { immediate: true })
 </script>
@@ -52,9 +54,9 @@ watch(() => [props.media, props.revision, retry.value] as const, async ([media, 
     <div class="stage-art" :class="{ 'has-result': !original && !!sticker, revealing, scanning: extracting && !original && !skipped, 'motion-skipped': skipped }">
       <img class="stage-original" :src="source" alt="刚刚拍下的照片" />
       <div v-if="revealing" class="cutout-outline">
-        <img :src="cutout" alt="" />
+        <img :src="sticker" alt="" />
       </div>
-      <img v-if="!original && sticker" ref="image" class="stage-sticker" :src="sticker" alt="美食贴纸预览" @animationend.self="revealing = false" />
+      <img v-if="!original && sticker" ref="image" class="stage-sticker" :src="sticker" alt="美食贴纸预览" @animationend.self="revealing = false" @animationcancel.self="revealing = false" />
       <div v-if="extracting && !original && !skipped" class="scan-light" aria-hidden="true"></div>
     </div>
     <div class="stage-tools">

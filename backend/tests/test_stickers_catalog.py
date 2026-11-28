@@ -54,12 +54,18 @@ def test_sticker_deduplication_transparency_outline_storage_and_isolation(lab):
     photo = put(client, owner)
     identifier = queue(client, owner, photo)
     assert queue(client, owner, photo) == identifier
+    assert job(client, owner, identifier)["timings"] is None
     assert client.delete(API + "/media/" + photo, headers=owner).status_code == 409
     assert client.post(JOBS, headers=other, json={"media_id": photo}).status_code == 404
     assert client.get(JOBS + "/" + identifier, headers=other).status_code == 404
     assert client.post(JOBS + "/" + identifier + "/cancel", headers=other).status_code == 404
     assert worker.run_once()
-    assert job(client, owner, identifier)["status"] == "succeeded"
+    completed = job(client, owner, identifier)
+    assert completed["status"] == "succeeded"
+    timings = completed["timings"]
+    assert set(timings) == {"queue_ms", "image_ms", "inference_ms", "encode_ms", "processing_ms", "ready_age_ms"}
+    assert all(isinstance(value, int) and value >= 0 for value in timings.values())
+    assert timings["processing_ms"] >= sum(timings[field] for field in ("image_ms", "inference_ms", "encode_ms"))
     assert queue(client, owner, photo) == identifier
     assert not worker.run_once()
     image_path = API + "/media/" + photo + "/sticker"
@@ -169,7 +175,8 @@ def test_storage_quotas_and_disk_guard_are_safe_failures(lab):
     worker.settings.media_user_files = 3
     assert worker.run_once()
     assert job(client, owner, identifier)["error_code"] == "media_quota"
-    assert client.post(JOBS + "/" + identifier + "/retry", headers=owner, json={}).status_code == 202
+    retried = client.post(JOBS + "/" + identifier + "/retry", headers=owner, json={})
+    assert retried.status_code == 202 and retried.json()["timings"] is None
     worker.settings.sticker_min_free_bytes = 10**17
     assert worker.run_once()
     assert job(client, owner, identifier)["error_code"] == "disk_low"

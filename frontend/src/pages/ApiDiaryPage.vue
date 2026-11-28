@@ -161,7 +161,7 @@ async function remove(item: Meal) {
               :aria-label="'查看记录 ' + entry.items.map(item => item.food_name).join('、')" @click="focused = entry.id">
               <span v-if="entry.media.length" class="scrap-gallery" :class="{ 'extra-photos': entry.media.length > 1 }">
                 <PrivatePhoto v-for="image in entry.media.slice(0, 3)" :key="image.id" :id="image.id" :data-photo="image.id"
-                  :presentation="image.use_original ? undefined : 'sticker'" alt="" />
+                  :presentation="image.use_original ? undefined : 'thumbnail'" alt="" />
               </span>
               <span v-else class="text-scrap"><Utensils aria-hidden="true" /></span>
               <strong>{{ entry.items.map(item => item.food_name).join('、') }}</strong>
