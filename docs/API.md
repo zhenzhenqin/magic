@@ -101,3 +101,21 @@
 | `GET /friends/{peer}/media/{media_id}` | 路径分别可加 `/thumbnail`、`/sticker`、`/sticker/thumbnail`。必须提供 `meal_id` 或 `catalog_id` 之一 |
 
 资源不可访问时返回 `404 shared_not_found`。响应省略未授权字段。授权的未知营养值为 JSON `null`，确认的零值保留为 0。媒体为 WebP，响应带 `Cache-Control: no-store`。上传空间不可用返回 `507 disk_low`，接收超时返回 `408 upload_timeout`。 [权限矩阵](SHARING.md)
+
+## 阶段 7.3 身份与个人 AI
+
+| 方法与路径 | 用途 |
+| --- | --- |
+| GET /identity/options | 邮箱和注册开放状态 |
+| POST /auth/email/code | 申请注册、登录或找回密码验证码 |
+| POST /auth/email/register、/auth/email/login、/auth/email/reset | 验码并完成相应用途 |
+| GET /users/me/security | 当前账号、邮箱和设备会话 |
+| POST /users/me/security/email/code、PUT /users/me/security/email | 绑定或更换邮箱 |
+| PUT /users/me/security/password | 经当前密码确认后修改密码 |
+| DELETE /users/me/security/sessions/{id}、/users/me/security/sessions/others | 撤销单个或全部其他设备 |
+| DELETE /users/me/security/account | 使用密码及用户名确认删除账号 |
+| GET、PUT、DELETE /ai/connection | 读取、建立或清除当前会话的模拟连接 |
+| POST /ai/connection/balance | 验证连接并返回模拟余额可用性 |
+| PATCH /ai/preferences | 设置个人每日次数或关闭首次引导 |
+
+路径均以 /api/v1 开头。私有路由要求访问令牌。浏览器认证 POST 沿用同源校验。 [账号体系](AUTH.md) · [个人 AI](BYOK.md)

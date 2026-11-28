@@ -35,20 +35,11 @@ API 模式提供真实账户、个人手账、饮食月历、每日摘要、私�
 
 在「饭搭子」复制自己的公开 ID，或填写好友的完整 ID 并发送申请。好友接受后，双方可以各自保存向对方授出的权限。可以单独开放原照片、贴纸或图鉴。进入「双人手账」可按日期和四种餐次查看自己与好友已共享的内容。 [权限及日期范围](docs/SHARING.md) · [阶段 6 报告](docs/PHASE-6.md)
 
-### 开启食物识别
+### 个人 AI 与账号安全
 
-在对应地域的阿里云百炼工作空间创建 API Key。在仓库根目录的忽略文件 `.env` 或后端进程环境设置 `AI_ENABLED=true`、`AI_PROVIDER=qwen`、`AI_BASE_URL`、`AI_API_KEY` 和 `AI_MODEL=qwen3-vl-flash`。Base URL 使用工作空间的 OpenAI 兼容地址，结尾为 `/compatible-mode/v1`。若新建 `.env`，同时使用现有开发 `JWT_SECRET`，或为独立开发库生成新的高熵密钥。启动前确认 `APP_ORIGINS` 对应实际端口。[百炼 API Key 指引](https://www.alibabacloud.com/help/en/model-studio/get-api-key)
+账号支持用户名密码，配置邮箱服务后可使用已验证邮箱、一次性验证码及邀请码注册。登录后从「我的」进入账号安全或 AI 助手。 [账号安全与本地验证](docs/AUTH.md)
 
-Qwen 与 DeepSeek 的累计调用上限默认均为 0。获得用户批准后，基于独立联调库的现有账本设置对应供应商的绝对累计上限。浏览器能在同账号下恢复上次任务，Worker 离线时可继续手动记录。 [联调素材和脚本](docs/ai-benchmark/README.md)
-
-阶段 4.2 使用独立联调目录 `D:/DevEnv/fooddiary-phase42`。在仓库根运行 `.\scripts\start-phase42-lab.ps1 -PrepareOnly` 可准备环境，直接运行会关闭真实调用。DeepSeek 联调在私有 `provider.env` 中配置 `AI_PROVIDER=deepseek`、`AI_BASE_URL=https://api.deepseek.com` 和专用 `AI_API_KEY`，获得明确的次数和费用授权后可启动真实 Worker。 [联调及授权说明](docs/PHASE-4.2.md)
-
-```powershell
-.\scripts\setup-backend.ps1 -Action Migrate
-.\scripts\start-dev.ps1 -WithAiWorker -FrontendPort 15175 -BackendPort 18021
-```
-
-也可在当前 API 已运行时，在另一窗口执行 `.\scripts\setup-backend.ps1 -Action AiWorker`。配置为空时，手动饮食系统可单独运行。真实模型效果仍待授权联调。[AI 配置和测试说明](docs/AI.md)
+当前个人 AI 只在明确启用的开发模拟环境接收测试标记。全局管理员密钥路径及真实模型调用已关闭。设置个人连接可随时跳过，拍照、贴纸、手动记录和好友共享可独立使用。 [个人 AI](docs/BYOK.md) · [阶段 7.3](docs/PHASE-7.3.md)
 
 ### Demo 模式
 
