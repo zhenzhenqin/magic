@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     register_attempts: int = Field(default=8, ge=1, le=1000)
     refresh_attempts: int = Field(default=60, ge=1, le=1000)
     public_registration: bool | None = None
+    registration_mode: Literal["closed", "invite", "public"] | None = None
+    email_mode: Literal["disabled", "capture", "smtp"] = "disabled"
+    email_code_secret: SecretStr | None = None
+    email_daily_limit: int = Field(default=100, ge=1, le=10000)
+    smtp_host: str = ""
+    smtp_port: Literal[465, 587] = 465
+    smtp_sender: str = ""
+    smtp_username: str = ""
+    smtp_authorization_code: SecretStr | None = None
     limit_window_seconds: int = Field(default=60, ge=1, le=3600)
     argon_memory_kib: int = Field(default=32768, ge=19456, le=131072)
     argon_time_cost: int = Field(default=2, ge=2, le=5)
@@ -78,6 +87,8 @@ class Settings(BaseSettings):
     sticker_min_free_bytes: int = Field(default=536_870_912, ge=0)
     sticker_pending_per_user: int = Field(default=12, ge=1, le=40)
     ai_enabled: bool = False
+    ai_byok_simulation: bool = False
+    ai_temporary_seconds: int = Field(default=3600, ge=60, le=14_400)
     ai_provider: AiProvider = "qwen"
     ai_base_url: str = ""
     ai_api_key: SecretStr | None = None
@@ -94,7 +105,6 @@ class Settings(BaseSettings):
     ai_deepseek_compact_request: bool = False
     ai_max_attempts: int = Field(default=3, ge=1, le=5)
     ai_job_retention_seconds: int = Field(default=604_800, ge=86_400, le=2_592_000)
-    ai_usage_retention_seconds: int = Field(default=2_592_000, ge=86_400, le=7_776_000)
     ai_job_ttl_seconds: int = Field(default=900, ge=180, le=3600)
 
     @field_validator("ai_base_url")
@@ -125,6 +135,17 @@ class Settings(BaseSettings):
             raise ValueError("Production browser origins require HTTPS")
         if self.app_env == "production" and self.ai_provider == "fake":
             raise ValueError("Production prohibits the fake AI provider")
+        if self.ai_byok_simulation and (self.app_env == "production" or self.ai_provider != "fake"):
+            raise ValueError("BYOK simulation requires a non-production fake AI provider")
+        if self.app_env == "production" and self.email_mode == "capture":
+            raise ValueError("Production prohibits simulated email capture")
+        if self.email_mode != "disabled" and (not self.email_code_secret or
+                len(self.email_code_secret.get_secret_value().encode()) < 32 or
+                self.email_code_secret.get_secret_value() == key):
+            raise ValueError("Email requires an independent secret of at least 32 bytes")
+        if self.email_mode == "smtp" and not all(
+                (self.smtp_host, self.smtp_sender, self.smtp_username, self.smtp_authorization_code)):
+            raise ValueError("SMTP requires explicit sender and credentials")
         if self.app_env == "production" and self.sticker_provider == "fake":
             raise ValueError("Production prohibits the fake sticker provider")
         if self.app_env == "production":
@@ -146,9 +167,10 @@ class Settings(BaseSettings):
 
     @property
     def ai_available(self) -> bool:
-        return self.ai_enabled and (self.ai_provider == "fake" or bool(
-            self.ai_base_url and self.ai_model and self.ai_api_key and self.ai_api_key.get_secret_value().strip()
-        ))
+        # Old compatibility fixtures use injected transports in tests only.
+        return self.ai_enabled and self.app_env != "production" and (
+            self.ai_provider == "fake" or self.app_env == "test" and bool(self.ai_base_url and self.ai_model and self.ai_api_key)
+        )
 
     @property
     def ai_model_name(self) -> str:
@@ -165,7 +187,14 @@ class Settings(BaseSettings):
 
     @property
     def registration_allowed(self) -> bool:
-        return self.public_registration if self.public_registration is not None else self.app_env != "production"
+        return self.registration_policy == "public"
+
+    @property
+    def registration_policy(self) -> str:
+        if self.registration_mode:
+            return self.registration_mode
+        available = self.public_registration if self.public_registration is not None else self.app_env != "production"
+        return "public" if available else "closed"
 
     @property
     def db_url(self):

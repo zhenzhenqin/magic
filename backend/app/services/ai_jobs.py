@@ -10,9 +10,11 @@ from app.ai_schemas import AiCapabilities, JobCreate, JobRetry, JobView, UsageVi
 from app.core.config import REAL_AI_PROVIDERS, Settings
 from app.core.database import utcnow
 from app.core.exceptions import ApiError
+from app.models import UserSettings
 from app.models.ai import AiJob, AiJobMedia, AiRetryRequest, AiUsageLog
 from app.models.diary import Meal, MediaAsset
 from app.services.ai_control import cumulative_exhausted, processing_identity, worker_online
+from app.services.ai_credentials import active_session, job_credential
 from app.services.ai_prompt import PROMPT_VERSION, disclosure
 from app.services.storage import MEDIA_MISSING, lock_owner
 
@@ -20,9 +22,9 @@ ACTIVE = ("pending", "running")
 RETRYABLE = {"ai_before_send", "ai_rate_limited", "ai_invalid_result", "ai_result_unknown", "ai_quota"}
 
 
-def capabilities(db: Session, settings: Settings) -> AiCapabilities:
+def capabilities(db: Session, settings: Settings, connected=True) -> AiCapabilities:
     version, privacy = disclosure(settings.ai_provider)
-    return AiCapabilities(provider=settings.ai_provider, available=settings.ai_available, simulated=settings.ai_provider == "fake",
+    return AiCapabilities(provider=settings.ai_provider, available=settings.ai_available and connected, simulated=settings.ai_provider == "fake",
                           max_images=settings.ai_max_images, consent_version=version, privacy_url=privacy,
                           worker_online=worker_online(db, settings, utcnow()))
 
@@ -61,7 +63,7 @@ def linked_photos(db: Session, job: AiJob) -> list[str]:
 
 
 def recover_job(db: Session, settings: Settings, owner: str, *, request_key=None, retry_key=None,
-                form_meal_id=None, job_id=None) -> JobView | None:
+                form_meal_id=None, job_id=None, vault=None) -> JobView | None:
     query = select(AiJob).where(AiJob.user_id == owner)
     if job_id:
         query = query.where(AiJob.id == job_id)
@@ -82,10 +84,10 @@ def recover_job(db: Session, settings: Settings, owner: str, *, request_key=None
     job = db.scalar(query.limit(1))
     if not job or (job.completed_at and job.completed_at <= utcnow() - timedelta(seconds=settings.ai_job_retention_seconds)):
         return None
-    return view_job(db, job, settings)
+    return view_job(db, job, settings, vault)
 
 
-def view_job(db: Session, job: AiJob, settings: Settings) -> JobView:
+def view_job(db: Session, job: AiJob, settings: Settings, vault=None) -> JobView:
     now = utcnow()
     status, error = job.status, job.error_code
     if job.expires_at <= now and (status == "pending" or (status == "running" and job.lease_until <= now)):
@@ -93,7 +95,8 @@ def view_job(db: Session, job: AiJob, settings: Settings) -> JobView:
     if job.completed_at and job.completed_at + timedelta(seconds=settings.ai_job_retention_seconds) <= now:
         raise ApiError(404, "ai_job_not_found", "识别任务不存在或不可访问。")
     can_retry = (status == "failed" and error in RETRYABLE and job.attempt_count < job.max_attempts
-                 and job.expires_at > now and configuration_matches(settings, job))
+                 and job.expires_at > now and configuration_matches(settings, job)
+                 and (not settings.ai_byok_simulation or job_credential(db, vault, job) is not None))
     ids = linked_photos(db, job)
     return JobView(id=job.id, status=status, simulated=job.provider == "fake", result=job.result_json,
                    error_code=error, can_retry=can_retry, attempt_count=job.attempt_count,
@@ -110,11 +113,13 @@ def usage(db: Session, settings: Settings, owner: str, now, *, exclude: str = ""
     ).where(AiUsageLog.created_at >= start, AiUsageLog.provider.in_(providers),
             AiUsageLog.status != "not_sent", AiUsageLog.id != exclude)).one()
     reason = None
+    personal_limit = db.scalar(select(UserSettings.ai_daily_limit).where(UserSettings.user_id == owner))
+    limit = settings.ai_user_daily_limit if personal_limit is None else min(settings.ai_user_daily_limit, personal_limit)
     if cumulative_exhausted(db, settings):
         reason = "ai_cumulative_limit"
-    elif total >= settings.ai_global_daily_limit or user_total >= settings.ai_user_daily_limit:
+    elif total >= settings.ai_global_daily_limit or user_total >= limit:
         reason = "ai_quota"
-    return UsageView(used=user_total, limit=settings.ai_user_daily_limit, resets_at=start + timedelta(days=1),
+    return UsageView(used=user_total, limit=limit, resets_at=start + timedelta(days=1),
                      available=settings.ai_available and reason is None, exhausted_reason=reason)
 
 
@@ -143,7 +148,7 @@ def require_slot(db: Session, settings: Settings, owner: str, now):
         raise quota_error(quota.exhausted_reason)
 
 
-def create_job(db: Session, settings: Settings, owner: str, key: str, data: JobCreate) -> AiJob:
+def create_job(db: Session, settings: Settings, owner: str, key: str, data: JobCreate, *, vault=None, session_id=None) -> AiJob:
     lock_owner(db, owner)  # The first SQLite write serializes ownership, quota and idempotency decisions.
     digest = request_fingerprint(data)
     existing = db.scalar(select(AiJob).where(AiJob.user_id == owner, AiJob.request_key == key))
@@ -152,6 +157,9 @@ def create_job(db: Session, settings: Settings, owner: str, key: str, data: JobC
             raise ApiError(409, "idempotency_conflict", "同一请求标识不能用于不同照片。")
         return existing
     require_consent(settings, data.consent_version)
+    credential = vault.get(owner, session_id) if settings.ai_byok_simulation and vault is not None else None
+    if settings.ai_byok_simulation and (credential is None or active_session(db, owner, session_id) is None):
+        raise ApiError(409, "ai_credential_required", "请先连接当前会话的个人 AI。")
     form_meal_id = str(data.form_meal_id) if data.form_meal_id else None
     if form_meal_id and not db.scalar(select(Meal.id).where(Meal.id == form_meal_id, Meal.user_id == owner)):
         raise ApiError(404, "meal_not_found", "用餐记录不存在或不可访问。")
@@ -166,6 +174,8 @@ def create_job(db: Session, settings: Settings, owner: str, key: str, data: JobC
     job = AiJob(id=str(uuid4()), user_id=owner, request_key=key, fingerprint=digest,
                 provider=settings.ai_provider, model=settings.ai_model_name, prompt_version=PROMPT_VERSION,
                 consent_version=data.consent_version, processing_fingerprint=processing_identity(settings),
+                credential_ref=credential.ref if credential else None,
+                credential_session_id=credential.session_id if credential else None,
                 max_attempts=settings.ai_max_attempts,
                 form_meal_id=form_meal_id, media_snapshot=ids,
                 available_at=now, expires_at=now + timedelta(seconds=settings.ai_job_ttl_seconds),
@@ -202,7 +212,7 @@ def cancel_job(db: Session, owner: str, job_id: str) -> AiJob:
     return job
 
 
-def retry_job(db: Session, settings: Settings, owner: str, job_id: str, key: str, data: JobRetry) -> AiJob:
+def retry_job(db: Session, settings: Settings, owner: str, job_id: str, key: str, data: JobRetry, *, vault=None, session_id=None) -> AiJob:
     lock_owner(db, owner)
     job = owned_job(db, owner, job_id)
     digest = sha256(data.model_dump_json().encode()).hexdigest()
@@ -212,7 +222,8 @@ def retry_job(db: Session, settings: Settings, owner: str, job_id: str, key: str
             raise ApiError(409, "idempotency_conflict", "同一重试标识不能用于不同确认内容。")
         return job
     require_consent(settings, data.consent_version)
-    if not view_job(db, job, settings).can_retry:
+    if ((settings.ai_byok_simulation and job.credential_session_id != session_id)
+            or not view_job(db, job, settings, vault).can_retry):
         raise ApiError(409, "ai_cannot_retry", "此识别任务无法重试，可以手动记录。")
     if job.error_code == "ai_result_unknown" and not data.accept_unknown_charge:
         raise ApiError(409, "ai_retry_confirmation", "上次调用可能已经计费，请确认是否再次识别。")

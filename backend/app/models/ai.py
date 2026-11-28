@@ -28,6 +28,8 @@ class AiJob(Base):
     prompt_version: Mapped[str] = mapped_column(String(24))
     consent_version: Mapped[str] = mapped_column(String(24))
     processing_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    credential_ref: Mapped[str | None] = mapped_column(String(36))
+    credential_session_id: Mapped[str | None] = mapped_column(String(36))
     attempt_count: Mapped[int] = mapped_column(default=0)
     max_attempts: Mapped[int]
     result_json: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
@@ -77,6 +79,7 @@ class AiUsageLog(Base):
     elapsed_ms: Mapped[int | None]
     upstream_request_id: Mapped[str | None] = mapped_column(String(128))
     usage_known: Mapped[bool] = mapped_column(default=False)
+    credential_ref: Mapped[str | None] = mapped_column(String(36))
     hold_until: Mapped[datetime] = mapped_column(UTCDateTime())
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 

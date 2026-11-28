@@ -199,12 +199,18 @@ def restore(root, target, reserve):
             db.execute("DELETE FROM ai_worker_heartbeats")
             db.execute("DELETE FROM sticker_runtime")
             db.execute("DELETE FROM media_write_reservations")
+            tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "email_challenges" in tables:
+                db.execute("UPDATE email_challenges SET consumed_at=? WHERE consumed_at IS NULL", (now,))
+            if "account_invitations" in tables:
+                db.execute("UPDATE account_invitations SET revoked_at=? WHERE revoked_at IS NULL", (now,))
             check_sqlite(db)
         settings = stage / "ISOLATED.env"
         settings.write_text(
             f'DATABASE_URL="sqlite:///{(target / "data" / DATABASE).as_posix()}"\n'
             f'MEDIA_DIR="{(target / "media").as_posix()}"\n'
-            "PUBLIC_REGISTRATION=false\nSTICKER_ENABLED=false\nAI_ENABLED=false\n"
+            "PUBLIC_REGISTRATION=false\nREGISTRATION_MODE=closed\nEMAIL_MODE=disabled\n"
+            "STICKER_ENABLED=false\nAI_ENABLED=false\nAI_BYOK_SIMULATION=false\n"
             "AI_DEEPSEEK_CUMULATIVE_LIMIT=0\nAI_QWEN_CUMULATIVE_LIMIT=0\n", encoding="utf-8",
         )
         settings.chmod(0o600)

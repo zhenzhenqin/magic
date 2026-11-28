@@ -54,6 +54,15 @@
   .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(var(--space-unit) * 6.4); }
   .form-stack { display: grid; gap: calc(var(--space-unit) * 8); }
   .form-error { color: var(--color-error); font-size: .9rem; }
+  .editorial-settings { max-width: 44rem; margin-inline: auto; display: grid; gap: 1.3rem; }
+  .settings-heading { display: grid; gap: .3rem; }
+  .settings-heading h1 { font: 700 clamp(1.75rem, 5vw, 2.25rem)/1.15 var(--font-serif); letter-spacing: -.035em; }
+  .settings-group { display: grid; gap: .85rem; border-top: 1px solid var(--color-line); padding: clamp(.95rem, 3vw, 1.25rem) 0; }
+  .settings-group h2 { font: 700 1.14rem var(--font-serif); }
+  .settings-group > p { max-width: 42rem; line-height: 1.65; }
+  .settings-link { min-height: var(--tap-size); display: flex; align-items: center; justify-content: space-between; gap: .7rem; border-bottom: 1px solid var(--color-line); padding: .45rem 0; font-size: .94rem; }
+  .settings-link svg { width: 1.05rem; color: var(--color-muted); }
+  .settings-nav { gap: 0; padding-block: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

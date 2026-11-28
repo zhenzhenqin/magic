@@ -10,7 +10,7 @@ from sqlalchemy import event, func, select
 from app.core.security import COOKIE_NAME
 from app.main import create_app
 from app.models.diary import Meal, MealItem, MealRequest
-from tests.support import migrate
+from tests.support import legacy_account, migrate
 from tests.test_identity import API, BROWSER, bearer, login, signed_in
 
 
@@ -47,10 +47,8 @@ def upload(client, headers, fmt="JPEG", contents=None, filename="fixture.jpg"):
 def test_migration_preserves_stage_two_identity_and_session(settings):
     migrate(settings, "0001_identity")
     with TestClient(create_app(settings)) as before:
-        session = signed_in(before)
-        cookie = before.cookies.get(COOKIE_NAME)
-        headers = bearer(session)
-        assert before.patch(API + "/users/me/settings", headers=headers, json={"timezone": "Asia/Tokyo"}).status_code == 200
+        with before.app.state.session_factory.begin() as db:
+            _, headers, cookie = legacy_account(db, settings)
     migrate(settings)
     with TestClient(create_app(settings)) as after:
         assert after.get(API + "/users/me", headers=headers).json()["username"] == "reader"

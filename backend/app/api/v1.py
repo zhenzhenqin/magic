@@ -13,6 +13,7 @@ from app.models import AuthSession, User, UserSettings
 from app.models.ai import AiCallBudget, AiJob, AiJobMedia, AiRetryRequest, AiUsageLog, AiWorkerHeartbeat
 from app.models.catalog import CatalogLink, CatalogName, FoodCatalog
 from app.models.diary import Meal, MealItem, MealMedia, MealRequest, MediaAsset
+from app.models.identity import EmailChallenge, Invitation
 from app.models.sharing import FriendRequest, Friendship, MediaWriteReservation, ShareAudit, SharePermission
 from app.models.stickers import MediaDerivative, StickerJob, StickerRuntime
 from app.schemas import AuthResponse, Login, ProfilePatch, Registration, SettingsPatch, SystemStatus, UserPreferences, UserProfile
@@ -44,6 +45,13 @@ def set_session(response: Response, request: Request, user: User, session: AuthS
                         expires_in=settings.access_token_seconds, user=UserProfile.model_validate(user))
 
 
+def detach_previous_connection(request, db, cookie):
+    if request.app.state.settings.ai_byok_simulation:
+        previous = auth.cookie_session(db, cookie)
+        if previous:
+            request.app.state.ai_credentials.remove(previous.user_id, previous.id)
+
+
 @router.get("/health", tags=["系统"])
 def health() -> SystemStatus:
     """检查应用进程是否运行。"""
@@ -58,7 +66,7 @@ def ready(db: Database) -> SystemStatus:
         for model in (User, UserSettings, AuthSession, Meal, MealItem, MealMedia, MealRequest, MediaAsset,
                       AiJob, AiJobMedia, AiRetryRequest, AiUsageLog, AiCallBudget, AiWorkerHeartbeat,
                       MediaDerivative, StickerJob, StickerRuntime, FoodCatalog, CatalogName, CatalogLink,
-                      FriendRequest, Friendship, SharePermission, ShareAudit, MediaWriteReservation):
+                      FriendRequest, Friendship, SharePermission, ShareAudit, MediaWriteReservation, EmailChallenge, Invitation):
             db.execute(select(model.__table__).limit(0))
     except SQLAlchemyError:
         raise ApiError(503, "database_unavailable", "数据库暂时不可用。") from None
@@ -70,17 +78,21 @@ def register(data: Registration, request: Request, db: Database) -> UserProfile:
     """创建用户名、密码和昵称，成功后由客户端引导登录。"""
     if not request.app.state.settings.registration_allowed:
         raise ApiError(403, "registration_closed", "当前仅限已有账号登录。")
+    if request.app.state.settings.email_mode != "disabled":
+        raise ApiError(403, "email_verification_required", "请使用邮箱验证码完成注册。")
     limit(request, "register", request.app.state.settings.register_attempts)
     user = auth.register(db, data, request.app.state.passwords)
     return UserProfile.model_validate(user)
 
 
 @authentication.post("/login", responses={401: {"model": ProblemResponse}})
-def login(data: Login, request: Request, response: Response, db: Database) -> AuthResponse:
+def login(data: Login, request: Request, response: Response, db: Database, cookie: RefreshCookie = None) -> AuthResponse:
     """校验口令，返回访问令牌并设置 HttpOnly 刷新 Cookie。"""
     settings = request.app.state.settings
     limit(request, "login", settings.login_attempts)
-    return set_session(response, request, *auth.login(db, data, settings, request.app.state.passwords))
+    session = auth.login(db, data, settings, request.app.state.passwords, device=auth.device_label(request))
+    detach_previous_connection(request, db, cookie)
+    return set_session(response, request, *session)
 
 
 @authentication.post("/refresh", responses={401: {"model": ProblemResponse}, 409: {"model": ProblemResponse}})
@@ -100,6 +112,10 @@ def logout(request: Request, db: Database, credentials: Bearer, cookie: RefreshC
     settings = request.app.state.settings
     identity = access_identity(settings, credentials.credentials, binding_only=True) if credentials else None
     clear_cookie = auth.revoke(db, cookie, identity)
+    if identity:
+        request.app.state.ai_credentials.remove(*identity)
+    else:
+        detach_previous_connection(request, db, cookie)
     response = Response(status_code=204)
     if clear_cookie:
         response.delete_cookie(COOKIE_NAME, path=COOKIE_PATH, secure=settings.secure_cookie, httponly=True, samesite="strict")

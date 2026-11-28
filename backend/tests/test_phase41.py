@@ -136,7 +136,8 @@ def test_qwen_cumulative_counts_automatic_retry_and_survives_midnight_restart_an
     assert client.get(path, headers=auth).json()["error_code"] == "ai_cumulative_limit"
     with app.state.session_factory.begin() as db:
         db.execute(update(AiUsageLog).values(created_at=utcnow() - timedelta(days=40)))
-    assert worker(app).purge()[1] == 2
+    assert worker(app).purge()[1] == 0
+    assert len(attempts(app, path.rsplit("/", 1)[-1])) == 2
     assert spent(app) == 2
     assert new_job(client, auth, [image]).json()["error"]["code"] == "ai_cumulative_limit"
 
@@ -263,10 +264,13 @@ def test_ai_source_requires_original_media_and_summary_distinguishes_unknown_zer
 
 
 def test_phase_4_upgrade_backfills_count_without_losing_jobs_links_or_history(settings):
+    from tests.support import legacy_account, legacy_photo
+
     migrate(settings, "0003_ai_recognition")
     with TestClient(create_app(settings)) as before:
-        headers = bearer(signed_in(before))
-        media = photo(before, headers)
+        with before.app.state.session_factory.begin() as db:
+            owner, headers, _ = legacy_account(db, settings)
+            media, _ = legacy_photo(db, settings, owner)
         identifier, key = str(uuid4()), uuid4().hex
         result = {"schema_version": "1", "status": "no_food", "foods": [], "warnings": []}
         fingerprint = sha256(json.dumps({"media_ids": [media], "consent_version": CONSENT_VERSION},
@@ -274,7 +278,6 @@ def test_phase_4_upgrade_backfills_count_without_losing_jobs_links_or_history(se
         with before.app.state.session_factory.begin() as db:
             metadata = MetaData()
             metadata.reflect(db.connection(), only=("ai_jobs", "ai_job_media", "ai_usage_logs"))
-            owner = db.scalar(select(User.id))
             now = utcnow().replace(tzinfo=None)
             db.execute(metadata.tables["ai_jobs"].insert().values(
                 id=identifier, user_id=owner, request_key=key, fingerprint=fingerprint, job_type="food_recognition",

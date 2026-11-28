@@ -1,5 +1,6 @@
 from typing import Annotated
 from datetime import datetime
+import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StringConstraints, field_validator
@@ -29,8 +30,30 @@ class Registration(AccountCredentials):
     nickname: Nickname
 
 
-class Login(AccountCredentials):
+def normalize_email(value: str) -> str:
+    value = value.strip()
+    local, separator, domain = value.partition("@")
+    if (not separator or len(value) > 254 or len(local) > 64
+            or not re.fullmatch(r"[A-Za-z0-9_+!#$%&'*=/^\x60{|}~?-]+(?:\.[A-Za-z0-9_+!#$%&'*=/^\x60{|}~?-]+)*", local)):
+        raise ValueError("Invalid email address")
+    domain = domain.lower()
+    if not re.fullmatch(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", domain):
+        raise ValueError("Invalid email domain")
+    return local + "@" + domain
+
+
+class Login(Input):
+    username: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254)]
     password: LoginPassword
+
+    @field_validator("username")
+    @classmethod
+    def normalize_identity(cls, value):
+        if "@" in value:
+            return normalize_email(value)
+        if not re.fullmatch(r"[a-zA-Z0-9_]{3,32}", value):
+            raise ValueError("Invalid username")
+        return value.lower()
 
 
 class ProfilePatch(Input):

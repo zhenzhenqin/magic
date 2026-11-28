@@ -44,6 +44,7 @@ def current_user(request: Request, db: Database, credentials: Bearer) -> User:
     )
     if not account:
         raise invalid_session()
+    request.state.auth_session_id = session_id
     return account
 
 

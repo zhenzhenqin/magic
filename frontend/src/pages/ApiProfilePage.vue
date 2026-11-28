@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { LogOut, UserRound } from 'lucide-vue-next'
+import { ChevronRight, LogOut } from 'lucide-vue-next'
 import { onMounted, reactive, ref, watch } from 'vue'
 import ModalSurface from '../components/ModalSurface.vue'
-import PageHeading from '../components/PageHeading.vue'
 import { authMessage, useAuth } from '../stores/auth'
 
 const auth = useAuth()
@@ -51,18 +50,23 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
-    <PageHeading title="我的" subtitle="管理你的私人手账账号。" />
+  <div class="editorial-settings">
+    <header class="settings-heading"><h1>我的</h1></header>
+    <nav class="settings-group settings-nav" aria-label="个人设置入口">
+      <RouterLink class="settings-link" :to="{ name: 'personal-ai' }">AI 助手 <ChevronRight aria-hidden="true" /></RouterLink>
+      <RouterLink class="settings-link" :to="{ name: 'security' }">账号安全 <ChevronRight aria-hidden="true" /></RouterLink>
+      <RouterLink class="settings-link" :to="{ name: 'friends' }">隐私与共享 <ChevronRight aria-hidden="true" /></RouterLink>
+    </nav>
     <div v-if="auth.currentUser" class="profile-grid">
-      <section class="paper-panel panel-pad form-stack">
-        <h2><UserRound aria-hidden="true" /> 个人资料</h2>
+      <section class="settings-group">
+        <h2>个人资料</h2>
         <dl><div><dt>用户名</dt><dd>{{ auth.currentUser.username }}</dd></div><div><dt>公开用户 ID</dt><dd>{{ auth.currentUser.public_id }}</dd></div></dl>
         <form class="form-stack" @submit.prevent="saveProfile">
           <label class="field">昵称<input v-model="nickname" type="text" maxlength="40" autocomplete="nickname" required /></label>
           <button class="button button-primary" :disabled="!!busy">{{ busy === 'profile' ? '正在保存…' : '保存昵称' }}</button>
         </form>
       </section>
-      <section class="paper-panel panel-pad form-stack">
+      <section class="settings-group">
         <h2>个人设置</h2>
         <form v-if="loaded" class="form-stack" @submit.prevent="saveSettings">
           <label class="field">时区<input v-model="preferences.timezone" type="text" maxlength="64" placeholder="Asia/Shanghai" required /></label>
@@ -89,14 +93,12 @@ onMounted(load)
 </template>
 
 <style scoped>
-.profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(var(--space-unit) * 8); align-items: start; }
-h2 { display: flex; align-items: center; gap: calc(var(--space-unit) * 4); font: 700 1.3rem var(--font-serif); }
-h2 svg { width: 1.15rem; color: var(--color-sage-deep); }
+.profile-grid { display: grid; gap: .7rem; }
+.profile-grid form { max-width: 28rem; }
 dl { display: grid; gap: calc(var(--space-unit) * 6); margin: 0; }
 dt { color: var(--color-muted); font-size: .86rem; }
 dd { margin: 0; overflow-wrap: anywhere; }
 .check { display: flex; align-items: center; gap: calc(var(--space-unit) * 4); min-height: var(--tap-size); }
 .check input { accent-color: var(--color-sage-deep); width: 1.15rem; height: 1.15rem; }
-.notice { margin-top: calc(var(--space-unit) * 8); }
-@media (max-width: 650px) { .profile-grid { grid-template-columns: minmax(0, 1fr); } }
+.notice { margin-top: .35rem; }
 </style>

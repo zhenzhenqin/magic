@@ -11,7 +11,7 @@ from app.services.ai_worker import AiWorker
 
 def main():
     settings = Settings()
-    if not settings.ai_available:
+    if not settings.ai_available or settings.ai_byok_simulation:
         print("FoodDiary AI is disabled or not configured.")
         return
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")

@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { authRepository } from '../api/authRepository'
 import { ApiError, request } from '../api/client'
 import type { RequestOptions } from '../api/client'
-import type { AuthSession, UserPreferences, UserProfile } from '../api/authRepository'
+import type { AuthSession, EmailProof, UserPreferences, UserProfile } from '../api/authRepository'
 
 async function serializeSession<T>(work: () => Promise<T>): Promise<T> {
   return navigator.locks ? await navigator.locks.request('fooddiary-api-auth-session', work) : work()
@@ -114,9 +114,9 @@ export const useAuth = defineStore('api-auth', () => {
     return restoring
   }
 
-  async function login(data: { username: string; password: string }) {
+  async function signIn(work: () => Promise<AuthSession>) {
     await serializeSession(async () => {
-      const session = await authRepository.login(data)
+      const session = await work()
       tabPause(false)
       clear()
       apply(session)
@@ -124,14 +124,18 @@ export const useAuth = defineStore('api-auth', () => {
     })
   }
 
+  function forget() {
+    const owner = currentUser.value?.public_id
+    tabPause(false)
+    clear()
+    channel?.postMessage({ type: 'logout', owner })
+  }
+
   async function logout() {
     await serializeSession(async () => {
       if (!access) return
-      const owner = currentUser.value?.public_id
       await authRepository.logout(access)
-      tabPause(false)
-      clear()
-      channel?.postMessage({ type: 'logout', owner })
+      forget()
     })
   }
 
@@ -175,7 +179,9 @@ export const useAuth = defineStore('api-auth', () => {
   }
 
   return {
-    currentUser, preferences, isAuthenticated, isInitializing, sessionNotice, initialize, login, logout, refresh,
+    currentUser, preferences, isAuthenticated, isInitializing, sessionNotice, initialize, logout, refresh, forget,
+    login: (data: { username: string; password: string }) => signIn(() => authRepository.login(data)),
+    loginEmail: (data: EmailProof) => signIn(() => authRepository.loginEmail(data)),
     register: authRepository.register, loadProfile, updateProfile, api,
     loadPreferences: async () => preferences.value = await api<UserPreferences>('/users/me/settings'),
     updatePreferences: async (data: UserPreferences) => preferences.value = await api<UserPreferences>('/users/me/settings', { method: 'PATCH', body: data }),

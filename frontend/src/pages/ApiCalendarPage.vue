@@ -50,7 +50,8 @@ const dates = computed(() => Array.from(
 </template>
 
 <style scoped>
-.calendar-page { max-width: 55rem; margin: 0 auto; }
+.calendar-page { max-width: 51rem; margin: 0 auto; }
+.calendar-paper { border-radius: 0; background: var(--color-sheet) var(--paper-texture); }
 .calendar-header, footer { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
 .calendar-header h2 { font: 700 clamp(1.25rem, 3vw, 1.85rem) var(--font-serif); }
 .weekdays, .days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); text-align: center; }

@@ -31,7 +31,8 @@ export async function request<T>(path: string, options: RequestOptions = {}, acc
   let response: Response
   try {
     response = await fetch('/api/v1' + path + (query.size ? '?' + query : ''), {
-      method, headers, credentials: authPath ? 'same-origin' : 'omit', body, cache: 'no-store', signal,
+      method, headers, credentials: authPath || path === '/users/me/security/account' ? 'same-origin' : 'omit',
+      body, cache: 'no-store', signal,
     })
   } catch {
     if (options.signal?.aborted) throw new DOMException('Request cancelled', 'AbortError')

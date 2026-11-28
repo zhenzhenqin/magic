@@ -320,14 +320,14 @@ watch(available, active => { if (!active) closeDetail() })
 .book-heading { margin-bottom: .7rem; }
 .heading-row, .month-controls { display: flex; align-items: center; justify-content: space-between; gap: .7rem; }
 .heading-row { margin: .55rem 0 .7rem; }
-h1 { font: 700 clamp(1.7rem, 6vw, 2.9rem) var(--font-serif); }
+h1 { font: 700 clamp(1.65rem, 5vw, 2.35rem) var(--font-serif); }
 h2 { font: 600 clamp(1.3rem, 5vw, 2rem) var(--font-hand); color: var(--diary-ink-soft); }
 h3 { font: 600 1.2rem var(--font-hand); color: var(--diary-ink-soft); }
 .book-tabs { display: flex; gap: clamp(.55rem, 3vw, 1.6rem); align-items: center; flex-wrap: wrap; }
 .book-tabs a { font-size: .88rem; padding: .45rem .6rem; border-bottom: 2px solid transparent; }
 .book-tabs a[aria-current] { border-color: var(--color-ink); font-weight: 650; }
-.book-paper { position: relative; min-height: 16rem; padding: clamp(1rem, 4vw, 2.5rem) clamp(.75rem, 3vw, 2.3rem) 2rem clamp(1.4rem, 6vw, 3.5rem); border: 1px solid var(--color-line); border-radius: .75rem 1.65rem 1.65rem .75rem; background: var(--color-sheet) repeating-linear-gradient(0deg, #48352203 0 1px, transparent 1px 5px); box-shadow: var(--shadow-paper); }
-.book-paper::before { content: ''; position: absolute; inset: .45rem auto .45rem clamp(.1rem, 2vw, .8rem); width: .62rem; background: radial-gradient(circle at center, #efebe8 0 2px, #e2ddd8 2.25px 2.75px, transparent 3px) center top / .62rem 1.65rem repeat-y; pointer-events: none; }
+.book-paper { position: relative; min-height: 16rem; padding: clamp(1rem, 4vw, 2.5rem) clamp(.75rem, 3vw, 2.3rem) 2rem clamp(1.2rem, 5vw, 3rem); border: 1px solid var(--color-line); background: var(--color-sheet) var(--paper-texture); }
+.book-paper::before { content: ''; position: absolute; inset: 1rem auto 1rem clamp(.35rem, 1.4vw, .85rem); border-left: 1px solid var(--color-line); pointer-events: none; }
 .quiet-state { color: var(--color-muted); display: flex; align-items: center; gap: .5rem; min-height: 7rem; }
 .quiet-state svg { width: 1.15rem; }
 .nutrient-list { display: flex; gap: .45rem .9rem; flex-wrap: wrap; margin: .5rem 0; }

@@ -12,7 +12,7 @@ from PIL import Image
 from pydantic import ValidationError
 
 from app.ai_schemas import Recognition
-from app.core.config import DEEPSEEK_COMPACT_BODY_BYTES, DEEPSEEK_VISION_MODEL, AiProvider, Settings, validate_ai_base_url
+from app.core.config import DEEPSEEK_COMPACT_BODY_BYTES, DEEPSEEK_ENDPOINT, DEEPSEEK_VISION_MODEL, AiProvider, Settings, validate_ai_base_url
 from app.services.ai_prompt import SYSTEM_PROMPT
 
 MAX_IMAGE_BYTES = 640 * 1024
@@ -85,7 +85,8 @@ class CompatibleVisionProvider:
 
     async def analyze(self, images: list[bytes]) -> Analysis:
         settings = self.settings
-        if not settings.ai_available or settings.ai_provider != self.provider or not settings.ai_api_key:
+        if (settings.app_env != "test" or not isinstance(self.transport, httpx.MockTransport)
+                or not settings.ai_available or settings.ai_provider != self.provider or not settings.ai_api_key):
             raise ProviderError("ai_unavailable", sent=False)
         if self.provider == "deepseek" and settings.ai_model != DEEPSEEK_VISION_MODEL:
             raise ProviderError("ai_configuration_changed", sent=False)
@@ -183,6 +184,28 @@ class FakeVisionProvider:
                  protein_g=4, carbohydrates_g=38, fat_g=0.5, uncertainty="份量根据图片估算"),
         ]
         return Analysis(Recognition(schema_version="1", status="recognized", foods=foods, warnings=[]))
+
+
+def simulated_balance(credential, transport: httpx.MockTransport | None = None) -> bool:
+    """Exercise the documented balance contract locally with a non-network transport."""
+    mock = transport or httpx.MockTransport(lambda _: httpx.Response(200, json={
+        "is_available": True, "balance_infos": [],
+    }))
+    if not isinstance(mock, httpx.MockTransport):
+        raise ProviderError("ai_unavailable", sent=False)
+    try:
+        with httpx.Client(transport=mock, trust_env=False, follow_redirects=False, timeout=5) as client:
+            response = client.get(DEEPSEEK_ENDPOINT + "/user/balance",
+                                  headers={"Authorization": "Bearer " + credential.key.get_secret_value()})
+            if response.status_code in (401, 403):
+                raise ProviderError("ai_provider_auth")
+            response.raise_for_status()
+            available = response.json()["is_available"]
+            if type(available) is not bool:
+                raise ValueError("Invalid balance")
+            return available
+    except (httpx.HTTPError, ValueError, TypeError, KeyError):
+        raise ProviderError("ai_balance_unavailable") from None
 
 
 def build_provider(settings: Settings) -> FoodRecognitionProvider:

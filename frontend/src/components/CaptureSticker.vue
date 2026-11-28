@@ -70,11 +70,11 @@ watch(() => [props.media, props.revision, props.original, retry.value] as const,
 </template>
 
 <style scoped>
-.stage-art { display: grid; place-items: center; position: relative; isolation: isolate; overflow: hidden; height: clamp(12rem, 34vh, 21rem); background: #f4f0ea; border-radius: .75rem; }
+.stage-art { display: grid; place-items: center; position: relative; isolation: isolate; overflow: hidden; height: clamp(12rem, 34vh, 21rem); background: var(--color-paper-warm); border: 1px solid var(--color-line); }
 .stage-art img { grid-area: 1 / 1; max-width: 100%; width: auto; height: 100%; min-height: 0; max-height: 100%; object-fit: contain; }
 .stage-original { animation: freeze .18s ease-out both; }
 .has-result .stage-original { visibility: hidden; }
-.stage-art.revealing .stage-original { visibility: visible; animation: fade-original .55s .13s ease both; }
+.stage-art.revealing .stage-original { visibility: visible; animation: fade-original .56s .18s ease both; }
 .cutout-outline { position: absolute; width: 100%; height: 100%; inset: 0; display: grid; place-items: center; opacity: 0; animation: contour .69s ease both; }
 .cutout-outline img { filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 4px #fff) drop-shadow(0 0 5px #fff); }
 .stage-sticker { filter: drop-shadow(0 3px 4px #42362b28); transform: rotate(-3deg); }

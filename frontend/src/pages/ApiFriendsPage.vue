@@ -83,10 +83,6 @@ async function respond(id: string, action: 'accept' | 'reject' | 'cancel') {
       <button type="button" class="button button-primary" @click="adding = true; error = ''"><UserRoundPlus aria-hidden="true" /> 添加饭搭子</button>
     </header>
     <section class="friend-paper form-stack" aria-label="饭搭子">
-      <div v-if="friends" class="public-id">
-        <div><span class="caption">我的公开 ID</span><code>{{ friends.me.public_id }}</code></div>
-        <button type="button" class="text-action" aria-label="复制我的公开 ID" @click="copy"><Copy aria-hidden="true" /> 复制</button>
-      </div>
       <p v-if="notice" class="caption" role="status">{{ notice }}</p>
       <p v-if="list.error.value || queue.error.value || (error && !adding)" class="form-error" role="alert">{{ list.error.value || queue.error.value || error }}</p>
       <p v-if="!state.online.value" role="status" class="caption">网络已断开，连接后重新读取饭搭子。</p>
@@ -105,6 +101,10 @@ async function respond(id: string, action: 'accept' | 'reject' | 'cancel') {
           </div>
         </article>
       </section>
+      <div v-if="friends" class="public-id">
+        <div><span class="caption">我的公开 ID</span><code>{{ friends.me.public_id }}</code></div>
+        <button type="button" class="text-action" aria-label="复制我的公开 ID" @click="copy"><Copy aria-hidden="true" /> 复制</button>
+      </div>
       <section class="people" aria-labelledby="friends-heading">
         <h2 id="friends-heading">我的饭搭子</h2>
         <div v-if="friends && !friends.items.length" class="empty-state"><BookHeart aria-hidden="true" /><p>找到饭搭子后，就能各自选择想分享的手账内容。</p></div>
@@ -154,11 +154,11 @@ async function respond(id: string, action: 'accept' | 'reject' | 'cancel') {
 <style scoped>
 .friends-page { max-width: 49rem; margin: auto; }
 .friend-heading { display: flex; align-items: center; justify-content: space-between; gap: .7rem; margin-bottom: 1rem; }
-h1 { font: 700 clamp(1.7rem, 6vw, 2.8rem) var(--font-serif); }
+h1 { font: 700 clamp(1.65rem, 5vw, 2.35rem) var(--font-serif); }
 h2 { font: 600 1.3rem var(--font-hand); color: var(--diary-ink-soft); margin-bottom: .45rem; }
-.friend-paper { background: var(--color-sheet); border: 1px solid var(--color-line); border-radius: .65rem 1.65rem 1.65rem .65rem; padding: clamp(.9rem, 4vw, 2rem); box-shadow: var(--shadow-paper); }
+.friend-paper { border-top: 1px solid var(--color-line); padding: 1rem 0; }
 .public-id, .person-row { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
-.public-id { justify-content: space-between; padding-bottom: .8rem; border-bottom: 1px solid var(--color-line); }
+.public-id { justify-content: space-between; padding-block: .35rem; border-block: 1px solid var(--color-line); }
 .public-id code { display: block; user-select: all; font-size: clamp(.66rem, 2.8vw, .83rem); overflow-wrap: anywhere; }
 .initial { width: 2rem; height: 2rem; display: grid; place-items: center; flex: none; border-radius: .62rem; background: var(--color-leaf); color: var(--color-earth); font: 600 1rem var(--font-hand); }
 .person-copy { flex: 1; min-width: min(8rem, 100%); overflow-wrap: anywhere; }

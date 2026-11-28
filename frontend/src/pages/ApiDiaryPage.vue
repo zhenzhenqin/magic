@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, CalendarDays, NotebookPen, Plus, Utensils } from 'lucide-vue-next'
+import { BookOpen, CalendarDays, Plus, Utensils } from 'lucide-vue-next'
 import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { nutrientFields, useDiaryApi } from '../api/diaryRepository'
@@ -7,6 +7,7 @@ import type { Meal, NutrientKey } from '../api/diaryRepository'
 import DateStrip from '../components/DateStrip.vue'
 import ModalSurface from '../components/ModalSurface.vue'
 import PrivatePhoto from '../components/PrivatePhoto.vue'
+import PersonalAiIntro from '../components/PersonalAiIntro.vue'
 import { useApiDay } from '../composables/useApiDay'
 import { usePrivateQuery } from '../composables/usePrivateQuery'
 import { authMessage, useAuth } from '../stores/auth'
@@ -33,7 +34,6 @@ const recorded = usePrivateQuery(() => monthKeys.value, async (keys, signal) =>
   (await Promise.all(keys.split(',').map(month => api.calendar(month, signal)))).flatMap(result => result.days.map(day => day.date)))
 const { current: results, pending, error } = query
 const { current: daily } = summary
-const reportOpen = ref(false)
 const focused = ref<string>()
 const confirming = ref(false)
 const deleting = ref(false)
@@ -44,6 +44,15 @@ const visibleNutrients = computed(() => (Object.keys(nutrientFields) as Nutrient
   key === 'calories_kcal' ? auth.preferences?.show_calories : auth.preferences?.show_nutrition))
 
 const entries = computed(() => [...(results.value?.items ?? [])].sort((first, second) => first.local_time.localeCompare(second.local_time)))
+const groups = computed(() => {
+  const byMeal = new Map<Meal['meal_type'], Meal[]>()
+  for (const entry of entries.value) {
+    const group = byMeal.get(entry.meal_type) ?? []
+    group.push(entry)
+    byMeal.set(entry.meal_type, group)
+  }
+  return [...byMeal.entries()]
+})
 watch([entries, () => placement.pending], async ([rows, delivery]) => {
   if (!delivery || !rows.some(row => row.id === delivery.meal)) return
   await nextTick()
@@ -128,7 +137,7 @@ async function remove(item: Meal) {
   <div class="notebook-home">
     <header class="diary-cover">
       <h1>美食手账</h1>
-      <button type="button" class="text-action report-action" @click="reportOpen = true"><NotebookPen aria-hidden="true" /> 周报 <small>待开放</small></button>
+      <RouterLink class="text-action" :to="{ name: 'calendar', query: { date: selected } }"><CalendarDays aria-hidden="true" /> 月历</RouterLink>
     </header>
     <DateStrip notebook :selected="selected" :today="today" :recorded="recorded.current.value" @select="setDate" />
     <section ref="notebook" class="notebook-sheet" aria-labelledby="entries-heading">
@@ -146,7 +155,6 @@ async function remove(item: Meal) {
             </p>
           </div>
           <div class="sheet-actions">
-            <RouterLink class="text-action" :to="{ name: 'calendar', query: { date: selected } }"><CalendarDays aria-hidden="true" /> 月历</RouterLink>
             <button class="text-action" @click="add()"><Plus aria-hidden="true" /> 记一笔</button>
           </div>
         </header>
@@ -156,8 +164,10 @@ async function remove(item: Meal) {
           <BookOpen /><h3>这一页还留白</h3><p>想记住今天的哪一种味道？</p><button class="button button-primary" @click="add()"><Plus /> 写下第一餐</button>
         </div>
         <div v-else>
-          <div class="scrap-grid">
-            <button v-for="entry in entries" :key="entry.id" class="scrap" :data-placement="entry.id"
+          <section v-for="[kind, items] in groups" :key="kind" class="meal-index">
+            <h3>{{ mealLabels[kind].label }}</h3>
+            <div class="scrap-grid">
+            <button v-for="entry in items" :key="entry.id" class="scrap" :data-placement="entry.id"
               :aria-label="'查看记录 ' + entry.items.map(item => item.food_name).join('、')" @click="focused = entry.id">
               <span v-if="entry.media.length" class="scrap-gallery" :class="{ 'extra-photos': entry.media.length > 1 }">
                 <PrivatePhoto v-for="image in entry.media.slice(0, 3)" :key="image.id" :id="image.id" :data-photo="image.id"
@@ -166,10 +176,11 @@ async function remove(item: Meal) {
               <span v-else class="text-scrap"><Utensils aria-hidden="true" /></span>
               <strong>{{ entry.items.map(item => item.food_name).join('、') }}</strong>
               <span v-if="auth.preferences?.show_calories" class="scrap-nutrition">{{ captionCalories(entry) }}</span>
-              <span class="scrap-meal">{{ mealLabels[entry.meal_type].label }} · {{ entry.local_time.slice(0, 5) }}</span>
+              <span class="scrap-meal">{{ entry.local_time.slice(0, 5) }}</span>
               <span v-if="entry.note" class="scrap-note">{{ entry.note }}</span>
             </button>
-          </div>
+            </div>
+          </section>
           <div v-if="results.total > results.limit" class="toolbar page-buttons">
             <button class="button" :disabled="results.page === 1" @click="paginate(results.page - 1)">上一页</button>
             <span>{{ results.page }} / {{ Math.ceil(results.total / results.limit) }}</span>
@@ -194,10 +205,7 @@ async function remove(item: Meal) {
         </details>
       </footer>
     </section>
-    <ModalSurface :open="reportOpen" title="周报" @close="reportOpen = false">
-      <p class="caption">周报功能待开放。现在可以在月历中查看已有的饮食记录。</p>
-      <RouterLink class="button" :to="{ name: 'calendar', query: { date: selected } }">查看月历</RouterLink>
-    </ModalSurface>
+    <PersonalAiIntro />
     <ModalSurface :open="!!focused" title="饮食详情" @close="close">
       <p v-if="detailLoading" class="caption" role="status">正在读取详情…</p>
       <p v-if="loadError" class="form-error" role="alert">{{ loadError }}</p>
@@ -229,22 +237,22 @@ async function remove(item: Meal) {
 </template>
 
 <style scoped>
-.notebook-home { max-width: 51rem; margin: auto; }
+.notebook-home { max-width: 51rem; margin: auto; display: grid; gap: .75rem; }
 .diary-cover { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: .65rem; }
-h1 { font: 700 clamp(1.6rem, 5vw, 2.65rem)/1.16 var(--font-serif); letter-spacing: -.035em; color: #222; }
-.report-action { white-space: nowrap; }
-.report-action small { padding: .1rem .35rem; color: #6c655f; background: #ebe8e4; border-radius: .25rem; font-size: .65rem; }
-.notebook-sheet { position: relative; min-height: 26rem; padding: clamp(1rem, 4.4vw, 2.2rem) clamp(.85rem, 4.6vw, 2.6rem) 1.65rem clamp(1.5rem, 6.5vw, 3.65rem); border-radius: .65rem 1.8rem 1.8rem .65rem; isolation: isolate; border: 1px solid #e4dfd8; background-color: #fffefc; background-image: linear-gradient(90deg, #eee8e043, transparent 11%), var(--paper-texture); box-shadow: 0 6px 16px #4e3f3011, 4px 4px 0 #eae6e0, 5px 5px 0 #ded9d3; }
-.notebook-sheet::before { position: absolute; content: ""; inset: .7rem auto .7rem clamp(.12rem, 1.25vw, .8rem); width: .95rem; background: radial-gradient(circle at 50% 50%, #eeeae4 0, #eeeae4 3px, #ddd6ce 3.5px, transparent 4.2px) 0 0 / 100% 2.05rem; pointer-events: none; }
+h1 { font: 700 clamp(1.65rem, 5vw, 2.35rem)/1.16 var(--font-serif); letter-spacing: -.035em; color: var(--color-ink); }
+.notebook-sheet { position: relative; min-height: 26rem; padding: clamp(1rem, 4.4vw, 2.2rem) clamp(.85rem, 4.6vw, 2.6rem) 1.65rem clamp(1.2rem, 5vw, 3rem); isolation: isolate; border: 1px solid var(--color-line); background: var(--color-sheet) var(--paper-texture); }
+.notebook-sheet::before { position: absolute; content: ""; inset: 1rem auto 1rem clamp(.35rem, 1.4vw, .85rem); border-left: 1px solid var(--color-line); pointer-events: none; }
 .sheet-header { display: flex; align-items: start; justify-content: space-between; gap: .45rem; margin-bottom: .6rem; }
 .sheet-header h2 { font: 600 clamp(1.12rem, 4vw, 1.75rem)/1.2 var(--font-hand); color: var(--diary-ink-soft); }
 .sheet-header h2 small { font-size: .75em; margin-left: .2rem; color: #766e65; }
 .sheet-calories { color: var(--diary-ink-soft); line-height: 1.1; margin-top: .35rem; font-family: var(--font-hand); }
-.sheet-calories strong { font-size: clamp(1.48rem, 6vw, 2.7rem); font-weight: 500; }
+.sheet-calories strong { font-size: 1.15rem; font-weight: 500; }
 .sheet-calories small { font-size: .79rem; color: #786e64; }
 .sheet-actions { display: flex; gap: .55rem; flex-wrap: wrap; justify-content: end; }
 .sheet-actions .text-action { color: #4c433c; font-size: .77rem; min-height: 2rem; }
 .sheet-actions svg { width: .9rem; }
+.meal-index { border-top: 1px solid var(--color-line); padding-top: .65rem; margin-top: .65rem; }
+.meal-index h3 { font: 600 1rem var(--font-hand); color: var(--diary-ink-soft); }
 .scrap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; column-gap: clamp(.55rem, 4vw, 2.4rem); row-gap: .65rem; margin: .15rem 0 1rem; }
 .scrap { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .12rem; text-align: center; border-radius: .6rem; padding: .45rem .08rem .58rem; overflow-wrap: anywhere; }
 .scrap:nth-child(even) { margin-top: clamp(.22rem, 2vw, 1.1rem); }
@@ -279,7 +287,7 @@ h1 { font: 700 clamp(1.6rem, 5vw, 2.65rem)/1.16 var(--font-serif); letter-spacin
   .scrap-grid { row-gap: .12rem; margin-top: 0; }
   .scrap { padding-block: .26rem .27rem; gap: .07rem; }
   .scrap:nth-child(even) { margin-top: .2rem; }
-  .scrap-gallery { height: clamp(4.1rem, 19vw, 5.8rem); margin-bottom: .22rem; }
-  .scrap:nth-child(4n+3) .scrap-gallery { height: clamp(3.9rem, 18vw, 5.6rem); }
+  .scrap-gallery { height: clamp(5.1rem, 25vw, 7.65rem); margin-bottom: .22rem; }
+  .scrap:nth-child(4n+3) .scrap-gallery { height: clamp(4.8rem, 22vw, 7rem); }
 }
 </style>

@@ -11,7 +11,10 @@ const friendPath = '/friends/:friendId(fd_[a-f0-9]{32})'
 export const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: authPage },
   { path: '/register', name: 'register', component: authPage },
+  { path: '/recover', name: 'recover', component: authPage },
   { path: '/me', name: 'profile', meta: { requiresAuth: true }, component: () => import('../pages/ApiProfilePage.vue') },
+  { path: '/me/security', name: 'security', meta: { requiresAuth: true }, component: () => import('../pages/ApiSecurityPage.vue') },
+  { path: '/me/ai', name: 'personal-ai', meta: { requiresAuth: true }, component: () => import('../pages/ApiAiPage.vue') },
   { path: '/', name: 'diary', meta: { requiresAuth: true }, component: () => import('../pages/ApiDiaryPage.vue') },
   { path: '/calendar', name: 'calendar', meta: { requiresAuth: true }, component: () => import('../pages/ApiCalendarPage.vue') },
   { path: '/catalog', name: 'catalog', meta: { requiresAuth: true }, component: () => import('../pages/ApiCatalogPage.vue') },

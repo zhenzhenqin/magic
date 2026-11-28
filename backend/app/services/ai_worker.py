@@ -17,6 +17,7 @@ from app.core.database import utcnow
 from app.models.ai import AiJob, AiJobMedia, AiUsageLog
 from app.models.diary import MediaAsset
 from app.services.ai_control import HEARTBEAT_INTERVAL, mark_heartbeat, refund_real_call, reserve_real_call
+from app.services.ai_credentials import job_credential
 from app.services.ai_jobs import configuration_matches, end_job, matching_photos, retry_later, usage
 from app.services.ai_provider import Analysis, FoodRecognitionProvider, ProviderError, prepare_photo
 from app.services.storage import LocalStorageProvider
@@ -53,11 +54,13 @@ def file_stamp(stat: os.stat_result) -> tuple[int, int, int, int]:
 
 
 class AiWorker:
-    def __init__(self, settings: Settings, sessions, provider: FoodRecognitionProvider):
+    def __init__(self, settings: Settings, sessions, provider: FoodRecognitionProvider, *, vault=None, scoped_provider=None):
         self.settings = settings
         self.sessions = sessions
         self.provider = provider
         self.storage = LocalStorageProvider(settings)
+        self.vault = vault
+        self.scoped_provider = scoped_provider
 
     @staticmethod
     def begin(db):
@@ -91,12 +94,8 @@ class AiWorker:
             jobs = db.execute(delete(AiJob).where(
                 AiJob.completed_at <= now - timedelta(seconds=self.settings.ai_job_retention_seconds),
             )).rowcount
-            attempts = db.execute(delete(AiUsageLog).where(
-                AiUsageLog.created_at < now - timedelta(seconds=self.settings.ai_usage_retention_seconds),
-                ~AiUsageLog.status.in_(HELD),
-            )).rowcount
             db.commit()
-            return jobs, attempts
+            return jobs, 0
 
     def claim(self) -> Claim | None:
         with self.sessions() as db:
@@ -113,7 +112,9 @@ class AiWorker:
                 db.commit()
                 return None
             quota = usage(db, self.settings, job.user_id, now)
-            if not configuration_matches(self.settings, job):
+            if self.settings.ai_byok_simulation and job_credential(db, self.vault, job) is None:
+                end_job(job, "failed", now, "ai_credential_expired")
+            elif not configuration_matches(self.settings, job):
                 end_job(job, "failed", now, "ai_configuration_changed")
             elif not quota.available:
                 end_job(job, "failed", now, quota.exhausted_reason or "ai_unavailable")
@@ -126,7 +127,8 @@ class AiWorker:
                 )).rowcount
                 if claimed == 1:
                     db.add(AiUsageLog(id=token, job_id=job.id, user_id=job.user_id, provider=job.provider,
-                                      model=job.model, status="reserved", created_at=now, hold_until=lease))
+                                      model=job.model, status="reserved", created_at=now, hold_until=lease,
+                                      credential_ref=job.credential_ref))
                     result = Claim(job.id, job.user_id, token)
                     db.commit()
                     return result
@@ -192,7 +194,9 @@ class AiWorker:
                 verified = False
             quota = usage(db, self.settings, claim.owner, now, exclude=claim.token)
             code = None
-            if not configuration_matches(self.settings, job):
+            if self.settings.ai_byok_simulation and job_credential(db, self.vault, job) is None:
+                code = "ai_credential_expired"
+            elif not configuration_matches(self.settings, job):
                 code = "ai_configuration_changed"
             elif not verified:
                 code = "ai_images_expired"
@@ -211,6 +215,16 @@ class AiWorker:
             job.lease_until = attempt.hold_until = now + timedelta(seconds=self.settings.ai_timeout_seconds + 15)
             db.commit()
             return True
+
+    def provider_for(self, claim):
+        if not self.settings.ai_byok_simulation:
+            return self.provider
+        with self.sessions() as db:
+            job = self.current(db, claim, utcnow())
+            credential = job_credential(db, self.vault, job) if job else None
+        if credential is None or self.scoped_provider is None:
+            raise ProviderError("ai_credential_expired", sent=False)
+        return self.scoped_provider(credential)
 
     def finish(self, claim: Claim, outcome: Analysis | ProviderError, elapsed_ms: int | None = None):
         with self.sessions() as db:
@@ -259,9 +273,10 @@ class AiWorker:
             dispatched = await asyncio.to_thread(self.dispatch, claim, prepared)
             if not dispatched:
                 return True
+            provider = await asyncio.to_thread(self.provider_for, claim)
             sent_at = monotonic()
             async with asyncio.timeout(self.settings.ai_timeout_seconds + 1):
-                result = await self.provider.analyze(prepared.images)
+                result = await provider.analyze(prepared.images)
         except ProviderError as error:
             result = error
         except TimeoutError:
@@ -279,6 +294,8 @@ class AiWorker:
     def heartbeat(self):
         with self.sessions.begin() as db:
             mark_heartbeat(db, self.settings, utcnow())
+            if self.vault is not None:
+                self.vault.sweep(db)
 
     async def run(self):
         async def heartbeat_loop():

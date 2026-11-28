@@ -2,6 +2,7 @@
 import { BookOpen, Camera, HeartHandshake, LibraryBig, Sprout, UserRound } from 'lucide-vue-next'
 import { useRoute } from 'vue-router'
 import AvatarBadge from '../components/AvatarBadge.vue'
+import DiaryBrand from '../components/DiaryBrand.vue'
 import type { User } from '../types/domain'
 
 defineProps<{ account: User; demo?: boolean }>()
@@ -21,8 +22,8 @@ const isActive = (section: string[]) => section.some(path => route.path === path
   <div class="app-frame" :class="{ 'api-theme': !demo }">
     <aside class="rail">
       <RouterLink to="/" class="brand" aria-label="FoodDiary 美食手账">
-        <span class="brand-mark"><Sprout aria-hidden="true" /></span>
-        <span>FoodDiary<small>美 食 手 账</small></span>
+        <DiaryBrand v-if="!demo" />
+        <template v-else><span class="brand-mark"><Sprout aria-hidden="true" /></span><span>FoodDiary<small>美 食 手 账</small></span></template>
       </RouterLink>
       <nav class="navigation" aria-label="主导航">
         <RouterLink v-for="item in navigation" :key="item.to" :to="!demo && item.to === '/capture' ? { name: 'capture', query: { camera: '1' } } : item.to"
@@ -46,7 +47,8 @@ const isActive = (section: string[]) => section.some(path => route.path === path
     </aside>
     <header class="mobile-header">
       <RouterLink to="/" class="brand" aria-label="FoodDiary 美食手账">
-        <span class="brand-mark"><Sprout aria-hidden="true" /></span><span>FoodDiary</span>
+        <DiaryBrand v-if="!demo" />
+        <template v-else><span class="brand-mark"><Sprout aria-hidden="true" /></span><span>FoodDiary</span></template>
       </RouterLink>
       <RouterLink v-if="demo" to="/me" class="mobile-account" :aria-label="'演示账号 ' + account.nickname">
         <AvatarBadge :user="account" size="small" />
@@ -89,6 +91,16 @@ const isActive = (section: string[]) => section.some(path => route.path === path
 .capture-mark::before { position: absolute; content: ""; inset: 50% auto auto 50%; width: .37rem; height: .37rem; border: 1.3px solid currentColor; border-radius: 50%; transform: translate(-50%,-50%); }
 .capture-mark::after { position: absolute; content: ""; width: .31rem; border-top: 1.5px solid currentColor; left: .11rem; top: -.21rem; }
 .api-theme .workspace .page-shell { max-width: 66rem; }
+@media (min-width: 901px) {
+  .api-theme .rail { position: sticky; inset: 0 0 auto; display: flex; flex-direction: row; align-items: center; gap: 1.35rem; width: 100%; padding: .55rem max(2.1rem, calc((100vw - 70rem) / 2)); border: 0; border-bottom: 1px solid var(--color-line); background: var(--color-paper); }
+  .api-theme .brand { align-self: center; }
+  .api-theme .navigation { display: flex; align-items: center; gap: .35rem; margin: 0 auto; }
+  .api-theme .nav-link { padding-inline: .65rem; min-height: var(--tap-size); gap: .4rem; font-size: .87rem; border-bottom: 2px solid transparent; border-radius: 0; }
+  .api-theme .nav-active { background: transparent; border-color: var(--color-sage); }
+  .api-theme .rail-account { padding: 0; border: 0; margin: 0; }
+  .api-theme .rail-account small { display: none; }
+  .api-theme .workspace { margin-left: 0; }
+}
 @media (max-width: 900px) {
   .rail { display: contents; }
   .rail > .brand, .rail-account { display: none; }
@@ -109,9 +121,9 @@ const isActive = (section: string[]) => section.some(path => route.path === path
   .api-theme .mobile-secondary { display: flex; position: fixed; top: max(.7rem, env(safe-area-inset-top)); right: max(.95rem, env(safe-area-inset-right)); gap: .4rem; align-items: center; }
   .api-theme .mobile-account { display: inline-flex; align-items: center; justify-content: center; gap: .3rem; font-size: .72rem; padding-inline: .2rem; }
   .mobile-account svg { width: 1.05rem; height: 1.05rem; stroke-width: 1.6; }
-  .api-theme .navigation { grid-template-columns: 1fr 1.2fr 1fr; background: #f9f8f6; }
+  .api-theme .navigation { grid-template-columns: 1fr 1.2fr 1fr; background: var(--color-paper); }
   .api-theme .nav-secondary { display: none; }
-  .api-theme .nav-camera { order: 2; min-height: 3.15rem; width: min(100%, 6rem); margin-inline: auto; color: #fffefc; background: #111; border-radius: 1.24rem; flex-direction: row; gap: .35rem; }
+  .api-theme .nav-camera { order: 2; min-height: 2.85rem; width: min(100%, 6rem); margin-inline: auto; color: var(--color-sheet); background: var(--color-sage-deep); border-radius: .75rem; flex-direction: row; gap: .4rem; }
   .api-theme .nav-camera .nav-icon { background: none; padding: 0; margin: 0; }
   .api-theme .nav-camera:active { transform: scale(.94); }
   .api-theme .nav-link[href="/catalog"] { order: 3; }

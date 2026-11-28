@@ -4,25 +4,22 @@ from hashlib import sha256
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import MetaData, Table, inspect, select
+from sqlalchemy import MetaData, Table, inspect
 
 from app.diary_schemas import MealInput
 from app.main import create_app
-from app.models import User
-from tests.support import migrate
-from tests.test_diary import create, sample, upload
-from tests.test_identity import API, bearer, signed_in
+from tests.support import legacy_account, legacy_photo, migrate
+from tests.test_diary import create, sample
+from tests.test_identity import API
 
 
 def test_upgrade_from_diary_preserves_rows_media_session_and_old_request_key(settings):
     migrate(settings, "0002_meal_diary")
     meal_id, food_id, key = (str(uuid4()) for _ in range(3))
     with TestClient(create_app(settings)) as old:
-        auth = bearer(signed_in(old))
-        assert old.patch(API + "/users/me/settings", headers=auth, json={"timezone": "Asia/Tokyo"}).status_code == 200
-        media = upload(old, auth).json()["id"]
-        image = old.get(API + "/media/" + media, headers=auth)
-        assert image.status_code == 200
+        with old.app.state.session_factory.begin() as db:
+            owner, auth, _ = legacy_account(db, settings)
+            media, image = legacy_photo(db, settings, owner)
         payload = sample(media_ids=[media], items=[{"food_name": "饭团", "calories_kcal": 80.25}])
         data = MealInput.model_validate(payload)
         fields = data.model_dump()
@@ -34,7 +31,6 @@ def test_upgrade_from_diary_preserves_rows_media_session_and_old_request_key(set
         with old.app.state.session_factory.begin() as db:
             metadata = MetaData()
             before = lambda name: Table(name, metadata, autoload_with=db.connection())
-            owner = db.scalar(select(User.id))
             timestamp = data.eaten_at.replace(tzinfo=None)
             db.execute(before("meals").insert().values(
                 id=meal_id, user_id=owner, meal_type=data.meal_type, local_date=data.local_date,
@@ -58,6 +54,6 @@ def test_upgrade_from_diary_preserves_rows_media_session_and_old_request_key(set
         item = same.json()["items"][0]
         assert (item["id"], item["calories_kcal"], item["source"], item["ai_job_id"]) == (food_id, 80.25, "manual", None)
         assert same.json()["media"][0]["id"] == media
-        assert new.get(API + "/media/" + media, headers=auth).content == image.content
+        assert new.get(API + "/media/" + media, headers=auth).content == image
         catalog = new.get(API + "/catalog", headers=auth).json()
         assert catalog["collected"] == 1 and catalog["items"][0]["display_name"] == "饭团"

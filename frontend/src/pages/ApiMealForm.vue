@@ -354,7 +354,7 @@ function keepAsManual() {
     <p v-if="identifier && loading" class="caption" role="status">正在读取记录…</p>
     <div v-else-if="identifier && loadError" class="paper-panel empty-state"><p>{{ loadError }}</p><button class="button" @click="lookup.reload()">重新读取</button></div>
     <form v-else class="capture-grid" @submit.prevent="submit">
-      <section class="paper-panel panel-pad form-stack">
+      <section class="capture-leaf form-stack">
         <h2>食物照片</h2>
         <input ref="picking" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="choose" />
         <section v-if="captured?.preview" class="form-stack captured-photo" aria-label="拍照预览">
@@ -543,7 +543,8 @@ function keepAsManual() {
 </template>
 
 <style scoped>
-.capture-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); align-items: start; gap: 1rem; }
+.capture-grid { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: start; gap: clamp(1.2rem, 4vw, 2.4rem); }
+.capture-leaf { border-top: 1px solid var(--color-line); padding-block: 1.1rem; }
 .capture-more { color: var(--color-muted); font-size: .8rem; }
 h2, legend { font: 700 1.17rem var(--font-serif); }
 fieldset { min-width: 0; }
