@@ -23,7 +23,7 @@ def inventory(root, prepared=False):
             raise ValueError("Expected an immutable release directory")
         files.extend(folder.rglob("*"))
     result = {}
-    for path in sorted(files):
+    for path in files:
         key = path.relative_to(root).as_posix()
         parts = key.split("/")
         if prepared and parts[0] == "backend" and (parts[1:2] in ([".venv"], [".sticker"]) or "__pycache__" in parts):
@@ -34,7 +34,8 @@ def inventory(root, prepared=False):
             continue
         with path.open("rb") as stream:
             result[key] = file_digest(stream, "sha256").hexdigest()
-    return "".join(f"{digest}  {key}\n" for key, digest in result.items())
+    # Sort POSIX path strings so Windows and Linux write identical inventories.
+    return "".join(f"{digest}  {key}\n" for key, digest in sorted(result.items()))
 
 
 def main():
