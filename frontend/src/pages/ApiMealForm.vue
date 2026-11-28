@@ -474,14 +474,8 @@ function keepAsManual() {
           </template>
         </div>
       </section>
-      <section ref="manualFocus" class="paper-panel panel-pad">
+      <section ref="manualFocus" class="capture-leaf capture-details">
         <fieldset class="form-stack" :disabled="!!progress" aria-label="饮食信息">
-          <div class="field-grid">
-            <label class="field">记录日期<input v-model="draft.local_date" type="date" required min="1900-01-01" max="2200-12-31" /></label>
-            <label class="field">餐次<select v-model="draft.meal_type"><option v-for="kind in mealKinds" :key="kind" :value="kind">{{ mealLabels[kind].label }}</option></select></label>
-          </div>
-          <label class="field">用餐时间<input v-model="draft.local_time" type="time" required /></label>
-          <p class="caption">记录时区 {{ draft.timezone }}</p>
           <fieldset v-for="(item, index) in draft.items" :key="item.draftKey" class="food-form form-stack">
             <legend>食物 {{ index + 1 }}</legend>
             <p v-if="item.source && item.source !== 'manual'" class="caption">
@@ -504,7 +498,13 @@ function keepAsManual() {
             <button v-if="draft.items.length > 1" type="button" class="text-action" @click="draft.items.splice(index, 1)"><Trash2 /> 移除食物 {{ index + 1 }}</button>
           </fieldset>
           <button type="button" class="text-action" :disabled="draft.items.length >= 30" @click="draft.items.push(blank())"><Plus /> 添加另一种食物</button>
-          <label class="field">这一餐的备注<textarea v-model="draft.note" maxlength="1000" placeholder="记下想留住的细节" /></label>
+          <div class="meal-metadata">
+            <label class="field">记录日期<input v-model="draft.local_date" type="date" required min="1900-01-01" max="2200-12-31" /></label>
+            <label class="field">用餐时间<input v-model="draft.local_time" type="time" required /></label>
+            <label class="field">餐次<select v-model="draft.meal_type"><option v-for="kind in mealKinds" :key="kind" :value="kind">{{ mealLabels[kind].label }}</option></select></label>
+          </div>
+          <p class="caption">记录时区 {{ draft.timezone }}</p>
+          <label class="field meal-note">这一餐的备注<textarea v-model="draft.note" maxlength="1000" rows="2" placeholder="记下想留住的细节" /></label>
           <p v-if="error" class="form-error" role="alert">{{ error }}</p>
           <button v-if="maySaveWithoutSource" type="button" class="text-action" @click="keepAsManual">将这次识别结果转为手动明细</button>
           <button type="submit" class="button button-primary" :disabled="!!progress || (waiting && !job)">{{ progress || (captured ? '贴进手账' : '保存记录') }}</button>
@@ -576,5 +576,10 @@ fieldset { min-width: 0; }
 .food-form { padding: .65rem; border: 1px solid var(--color-line); border-radius: var(--radius-card); background: var(--color-rail); }
 .food-form legend { padding-inline: .35rem; }
 .nutrient-fields { margin-block: .65rem; }
+.capture-details > fieldset { gap: 1rem; }
+.meal-metadata { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, .9fr); gap: .45rem; }
+.meal-metadata .field :is(input, select) { padding-inline: .35rem; }
+.meal-metadata .field select { padding-right: 1.35rem; background-position: right .25rem center; }
+.meal-note textarea { min-height: 2.85rem; }
 @media (max-width: 690px) { .capture-grid { grid-template-columns: minmax(0, 1fr); } }
 </style>

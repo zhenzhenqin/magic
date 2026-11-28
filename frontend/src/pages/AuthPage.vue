@@ -29,7 +29,8 @@ const purpose = computed(() => isRegister.value ? 'register' : isRecover.value ?
 const registrationOpen = computed(() => options.value?.registration !== 'closed')
 const useEmailCode = computed(() => isRecover.value || method.value === 'code' || isRegister.value && options.value?.email_available)
 const usePassword = computed(() => method.value === 'password' || isRegister.value || isRecover.value)
-const sendCode = (email: string) => authRepository.issue(email, purpose.value)
+const needsInvitation = computed(() => isRegister.value && options.value?.registration === 'invite')
+const sendCode = (email: string) => authRepository.issue(email, purpose.value, needsInvitation.value ? invitation.value.trim() : undefined)
 
 function resetFields() {
   password.value = ''
@@ -102,13 +103,15 @@ async function retry() {
           <button type="button" :aria-pressed="method === 'password'" @click="method = 'password'; resetFields()">密码登录</button>
           <button type="button" :aria-pressed="method === 'code'" @click="method = 'code'; resetFields()">邮箱验证码登录</button>
         </nav>
-        <p v-if="isRegister && (!registrationOpen || options?.registration === 'invite' && !options.email_available)" class="caption">当前仅限已有账号登录。</p>
+        <p v-if="isRecover && options?.email_available === false" class="caption">当前环境暂未启用邮箱找回密码。</p>
+        <p v-else-if="isRegister && (!registrationOpen || options?.registration === 'invite' && !options.email_available)" class="caption">当前仅限已有账号登录。</p>
         <form v-else class="form-stack" @submit.prevent="submit">
           <label v-if="isRegister" class="field">昵称<input v-model="nickname" type="text" maxlength="40" autocomplete="nickname" required /></label>
           <label v-if="isRegister || !isRecover && method === 'password'" class="field">{{ isRegister || !options?.email_available ? '用户名' : '用户名或已验证邮箱' }}<input v-model="username"
             type="text" minlength="3" :maxlength="isRegister ? 32 : 254" :pattern="isRegister ? '[a-zA-Z0-9_]+' : undefined" autocomplete="username" autocapitalize="none" required /></label>
-          <EmailCodeFields v-if="useEmailCode" :key="purpose" v-model="proof" :send="sendCode" />
-          <label v-if="isRegister && options?.registration === 'invite'" class="field">邀请码<input v-model="invitation" maxlength="96" autocomplete="off" required /></label>
+          <label v-if="needsInvitation" class="field">邀请码<input v-model="invitation" maxlength="96" autocomplete="off" required /></label>
+          <EmailCodeFields v-if="useEmailCode" :key="purpose" v-model="proof" :send="sendCode"
+            :may-send="!needsInvitation || !!invitation.trim()" />
           <div v-if="usePassword">
             <label class="field" for="account-password">密码</label>
             <div class="password-field">

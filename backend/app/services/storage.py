@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.database import utcnow
-from app.core.exceptions import ApiError
+from app.core.exceptions import ApiError, invalid_session
 from app.models import User
 from app.models.ai import AiJob, AiJobMedia
 from app.models.diary import MealMedia, MediaAsset
@@ -64,7 +64,7 @@ def release_media_bytes(sessions, reservation):
 
 def lock_owner(db: Session, owner: str):
     table = User.__table__
-    db.execute(update(table).where(table.c.id == owner).values(updated_at=table.c.updated_at))
+    return db.execute(update(table).where(table.c.id == owner).values(updated_at=table.c.updated_at)).rowcount
 
 
 def owned_media(db: Session, owner: str, media_id: str):
@@ -184,7 +184,8 @@ class LocalStorageProvider:
             size, thumb_size = original_file.stat().st_size, thumbnail_file.stat().st_size
             with original_file.open("rb") as source:
                 digest = file_digest(source, "sha256").hexdigest()
-            lock_owner(db, owner)
+            if not lock_owner(db, owner):
+                raise invalid_session()
             count, byte_sum = storage_usage(db, owner)
             if count >= self.settings.media_user_files or byte_sum + size + thumb_size > self.settings.media_user_bytes:
                 raise ApiError(413, "media_quota", "图片存储额度已用完。")

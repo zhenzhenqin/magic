@@ -49,11 +49,9 @@ def smoke(release, wheelhouse, interpreter, nginx):
         backups.mkdir(mode=0o700)
         env_file = key_dir / "fooddiary.env"
         database = data / "fooddiary.db"
-        env_file.write_text(
-            f'APP_ENV=production\nAPP_ORIGINS=\'["https://food.example"]\'\n'
-            f'JWT_SECRET={token_urlsafe(48)}\nDATABASE_URL=sqlite:///{database}\nMEDIA_DIR={media}\n'
-            'PUBLIC_REGISTRATION=false\nAI_ENABLED=false\nSTICKER_ENABLED=false\n'
-        )
+        template = (release / "deploy/production/fooddiary.env.example").read_text()
+        env_file.write_text(template.replace("/opt/fooddiary", str(root))
+                            .replace("JWT_SECRET=\n", f"JWT_SECRET={token_urlsafe(48)}\n"))
         os.chown(env_file, 0, group.gr_gid)
         env_file.chmod(0o640)
         revision = (release / "REVISION").read_text().strip()
@@ -66,9 +64,14 @@ def smoke(release, wheelhouse, interpreter, nginx):
         prepare = root / "prepare.sh"
         prepare.write_text((PRODUCTION / "prepare.sh").read_text().replace("/opt/fooddiary", str(root))
                            .replace("root:fooddiary", "root:nogroup").replace("runuser -u fooddiary", "runuser -u nobody"))
-        execute("bash", prepare, "release", revision, wheelhouse, env=env)
+        execute("bash", prepare, "release", revision, wheelhouse, "--with-sticker", env=env)
         python = installed / "backend/.venv/bin/python"
         backend = installed / "backend"
+        execute("runuser", "-u", "nobody", "--", python, "-c",
+                "from app.core.config import Settings; s=Settings(); "
+                "assert s.registration_policy == 'closed' and s.email_mode == 'disabled' "
+                "and s.email_daily_limit == 30 and not s.ai_byok_simulation and not s.ai_enabled",
+                cwd=backend)
         candidate = data / ".candidate-fixture.db"
         candidate.touch()
         os.chown(candidate, owner.pw_uid, group.gr_gid)
@@ -86,7 +89,6 @@ def smoke(release, wheelhouse, interpreter, nginx):
             if unit.suffix not in (".service", ".timer"):
                 continue
             formatted = (unit.read_text().replace("/opt/fooddiary", str(root))
-                         .replace("/.sticker/bin/python", "/.venv/bin/python")
                          .replace("User=fooddiary", "User=nobody").replace("Group=fooddiary", "Group=nogroup"))
             (root / unit.name).write_text(formatted)
         execute("systemd-analyze", "verify", *sorted(root.glob("*.service")), *sorted(root.glob("*.timer")))

@@ -41,8 +41,8 @@ export type IdentityOptions = { email_available: boolean; registration: 'closed'
 
 export const authRepository = {
   options: () => request<IdentityOptions>('/identity/options'),
-  issue: (email: string, purpose: 'register' | 'login' | 'reset') =>
-    request<VerificationTicket>('/auth/email/code', { method: 'POST', body: { email, purpose } }),
+  issue: (email: string, purpose: 'register' | 'login' | 'reset', invitation?: string) =>
+    request<VerificationTicket>('/auth/email/code', { method: 'POST', body: { email, purpose, invitation } }),
   registerEmail: (body: Credentials & EmailProof & { nickname: string; invitation?: string }) =>
     request<UserProfile>('/auth/email/register', { method: 'POST', body }),
   loginEmail: (body: EmailProof) => request<AuthSession>('/auth/email/login', { method: 'POST', body }),

@@ -166,19 +166,19 @@ async function remove(item: Meal) {
         <div v-else>
           <section v-for="[kind, items] in groups" :key="kind" class="meal-index">
             <h3>{{ mealLabels[kind].label }}</h3>
-            <div class="scrap-grid">
-            <button v-for="entry in items" :key="entry.id" class="scrap" :data-placement="entry.id"
-              :aria-label="'查看记录 ' + entry.items.map(item => item.food_name).join('、')" @click="focused = entry.id">
-              <span v-if="entry.media.length" class="scrap-gallery" :class="{ 'extra-photos': entry.media.length > 1 }">
-                <PrivatePhoto v-for="image in entry.media.slice(0, 3)" :key="image.id" :id="image.id" :data-photo="image.id"
-                  :presentation="image.use_original ? undefined : 'thumbnail'" alt="" />
-              </span>
-              <span v-else class="text-scrap"><Utensils aria-hidden="true" /></span>
-              <strong>{{ entry.items.map(item => item.food_name).join('、') }}</strong>
-              <span v-if="auth.preferences?.show_calories" class="scrap-nutrition">{{ captionCalories(entry) }}</span>
-              <span class="scrap-meal">{{ entry.local_time.slice(0, 5) }}</span>
-              <span v-if="entry.note" class="scrap-note">{{ entry.note }}</span>
-            </button>
+            <div class="scrap-grid" :class="{ 'single-entry': items.length === 1 }">
+              <button v-for="entry in items" :key="entry.id" class="scrap" :class="{ 'wide-scrap': entry.media.length > 1 }"
+                :data-placement="entry.id" :aria-label="'查看记录 ' + entry.items.map(item => item.food_name).join('、')" @click="focused = entry.id">
+                <span v-if="entry.media.length" class="scrap-gallery" :class="{ 'extra-photos': entry.media.length > 1, 'photo-spread': entry.media.length > 2 }">
+                  <PrivatePhoto v-for="image in entry.media" :key="image.id" :id="image.id" :data-photo="image.id"
+                    :presentation="image.use_original ? undefined : 'thumbnail'" alt="" />
+                </span>
+                <span v-else class="text-scrap"><Utensils aria-hidden="true" /></span>
+                <strong>{{ entry.items.map(item => item.food_name).join('、') }}</strong>
+                <span v-if="auth.preferences?.show_calories" class="scrap-nutrition">{{ captionCalories(entry) }}</span>
+                <span class="scrap-meal">{{ entry.local_time.slice(0, 5) }}</span>
+                <span v-if="entry.note" class="scrap-note">{{ entry.note }}</span>
+              </button>
             </div>
           </section>
           <div v-if="results.total > results.limit" class="toolbar page-buttons">
@@ -240,7 +240,7 @@ async function remove(item: Meal) {
 .notebook-home { max-width: 51rem; margin: auto; display: grid; gap: .75rem; }
 .diary-cover { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: .65rem; }
 h1 { font: 700 clamp(1.65rem, 5vw, 2.35rem)/1.16 var(--font-serif); letter-spacing: -.035em; color: var(--color-ink); }
-.notebook-sheet { position: relative; min-height: 26rem; padding: clamp(1rem, 4.4vw, 2.2rem) clamp(.85rem, 4.6vw, 2.6rem) 1.65rem clamp(1.2rem, 5vw, 3rem); isolation: isolate; border: 1px solid var(--color-line); background: var(--color-sheet) var(--paper-texture); }
+.notebook-sheet { position: relative; padding: clamp(1rem, 4.4vw, 2.2rem) clamp(.85rem, 4.6vw, 2.6rem) 1.65rem clamp(1.2rem, 5vw, 3rem); isolation: isolate; border: 1px solid var(--color-line); background: var(--color-sheet) var(--paper-texture); }
 .notebook-sheet::before { position: absolute; content: ""; inset: 1rem auto 1rem clamp(.35rem, 1.4vw, .85rem); border-left: 1px solid var(--color-line); pointer-events: none; }
 .sheet-header { display: flex; align-items: start; justify-content: space-between; gap: .45rem; margin-bottom: .6rem; }
 .sheet-header h2 { font: 600 clamp(1.12rem, 4vw, 1.75rem)/1.2 var(--font-hand); color: var(--diary-ink-soft); }
@@ -254,19 +254,25 @@ h1 { font: 700 clamp(1.65rem, 5vw, 2.35rem)/1.16 var(--font-serif); letter-spaci
 .meal-index { border-top: 1px solid var(--color-line); padding-top: .65rem; margin-top: .65rem; }
 .meal-index h3 { font: 600 1rem var(--font-hand); color: var(--diary-ink-soft); }
 .scrap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; column-gap: clamp(.55rem, 4vw, 2.4rem); row-gap: .65rem; margin: .15rem 0 1rem; }
+.single-entry { grid-template-columns: minmax(0, 1fr); }
 .scrap { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .12rem; text-align: center; border-radius: .6rem; padding: .45rem .08rem .58rem; overflow-wrap: anywhere; }
-.scrap:nth-child(even) { margin-top: clamp(.22rem, 2vw, 1.1rem); }
+.scrap:nth-child(even):not(.wide-scrap) { margin-top: clamp(.22rem, 2vw, 1.1rem); }
+.scrap.wide-scrap { grid-column: 1 / -1; }
 .scrap:hover .scrap-gallery, .scrap:focus-visible .scrap-gallery { transform: translateY(-2px); }
-.scrap-gallery { display: grid; place-items: center; width: min(100%, 15rem); height: clamp(5.4rem, 23vw, 11rem); margin-bottom: .35rem; transition: transform .2s var(--ease-gentle); }
-.scrap:nth-child(4n+2) .scrap-gallery { width: min(91%, 13rem); }
-.scrap:nth-child(4n+3) .scrap-gallery { width: 87%; height: clamp(5.1rem, 21vw, 10rem); }
-.scrap-gallery.extra-photos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.extra-photos > :nth-child(n+3) { display: none; }
+.scrap-gallery { display: grid; place-items: center; width: min(100%, 15rem); margin-bottom: .35rem; transition: transform .2s var(--ease-gentle); }
+.scrap-gallery > :deep(.private-photo) { height: clamp(5.5rem, 27vw, 11rem); }
+.single-entry .scrap-gallery:not(.extra-photos) { width: min(93%, 23rem); }
+.single-entry .scrap-gallery:not(.extra-photos) > :deep(.private-photo) { height: clamp(8.8rem, 42vw, 14rem); }
+.scrap-gallery.extra-photos { width: min(100%, 34rem); grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem .7rem; }
+.extra-photos > :deep(.private-photo:nth-child(even)) { transform: translateY(.35rem); }
+.scrap-gallery.photo-spread { grid-template-columns: repeat(6, minmax(0, 1fr)); padding-bottom: .35rem; }
+.photo-spread > :deep(.private-photo) { grid-column: span 2; height: clamp(3.8rem, 19vw, 8.2rem); }
+.photo-spread > :deep(.private-photo:nth-child(-n+2)) { grid-column: span 3; height: clamp(5.75rem, 28vw, 10rem); }
 :deep(.landing-target > img:not(.landing-sticker)) { opacity: 0; }
 :deep(.landing-sticker) { position: fixed; z-index: 5; pointer-events: none; object-fit: contain; filter: drop-shadow(0 3px 3px #4e382528); }
 :deep(.landing-fallback) { animation: landing .66s cubic-bezier(.18,.73,.35,1) both; }
 @keyframes landing { from { transform: var(--landing-origin) rotate(-3deg); } 81% { transform: translateY(3px) scale(.96) rotate(3deg); } to { transform: rotate(-2deg); } }
-.scrap strong { color: var(--diary-ink-soft); font: 600 clamp(1rem, 4.3vw, 1.52rem)/1.17 var(--font-hand); }
+.scrap strong { max-width: 100%; overflow-wrap: anywhere; color: var(--diary-ink-soft); font: 600 clamp(1rem, 4.3vw, 1.52rem)/1.17 var(--font-hand); }
 .scrap-nutrition { color: #766e65; font: 500 clamp(.75rem, 2.9vw, .99rem) var(--font-hand); }
 .scrap-meal, .scrap-note { color: #74706a; font-size: .67rem; }
 .text-scrap { min-height: 2.15rem; padding-top: .25rem; color: #b1a195; }
@@ -286,8 +292,7 @@ h1 { font: 700 clamp(1.65rem, 5vw, 2.35rem)/1.16 var(--font-serif); letter-spaci
   .sheet-header { margin-bottom: .18rem; }
   .scrap-grid { row-gap: .12rem; margin-top: 0; }
   .scrap { padding-block: .26rem .27rem; gap: .07rem; }
-  .scrap:nth-child(even) { margin-top: .2rem; }
-  .scrap-gallery { height: clamp(5.1rem, 25vw, 7.65rem); margin-bottom: .22rem; }
-  .scrap:nth-child(4n+3) .scrap-gallery { height: clamp(4.8rem, 22vw, 7rem); }
+  .scrap:nth-child(even):not(.wide-scrap) { margin-top: .2rem; }
+  .scrap-gallery { margin-bottom: .22rem; }
 }
 </style>

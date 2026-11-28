@@ -81,6 +81,8 @@ def connect(request: Request, data: Connect, user: CurrentUser, db: Database):
 @router.delete("/connection", status_code=204)
 def disconnect(request: Request, user: CurrentUser, db: Database):
     lock_owner(db, user.id)
+    if active_session(db, user.id, request.state.auth_session_id) is None:
+        raise invalid_session()
     request.app.state.ai_credentials.remove(user.id, request.state.auth_session_id)
     db.commit()
 
@@ -101,6 +103,8 @@ def balance(request: Request, user: CurrentUser):
 @router.patch("/preferences")
 def preferences(request: Request, data: Preferences, user: CurrentUser, db: Database):
     lock_owner(db, user.id)
+    if active_session(db, user.id, request.state.auth_session_id) is None:
+        raise invalid_session()
     record = db.get(UserSettings, user.id)
     if "daily_limit" in data.model_fields_set:
         if data.daily_limit is not None and data.daily_limit > request.app.state.settings.ai_user_daily_limit:

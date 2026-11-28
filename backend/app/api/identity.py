@@ -11,6 +11,7 @@ from app.core.exceptions import ApiError, invalid_session
 from app.core.security import COOKIE_NAME, COOKIE_PATH
 from app.dependencies import CurrentUser, Database, browser_request
 from app.models import AuthSession, User
+from app.models.ai import AiUsageLog
 from app.models.diary import MediaAsset
 from app.models.stickers import MediaDerivative
 from app.schemas import Input, LoginPassword, NewPassword, Registration, UserProfile, normalize_email
@@ -20,6 +21,7 @@ from app.services.ai_credentials import active_session
 router = APIRouter(tags=["邮箱与账号安全"])
 browser = [Depends(browser_request)]
 Code = Annotated[str, StringConstraints(pattern=r"^[0-9]{6}$")]
+InvitationCode = Annotated[str, StringConstraints(strip_whitespace=True, max_length=96)]
 
 
 class EmailInput(Input):
@@ -30,6 +32,7 @@ class EmailInput(Input):
 
 class SendEmailCode(EmailInput):
     purpose: Literal["register", "login", "reset"]
+    invitation: InvitationCode | None = None
 
 
 class EmailProof(EmailInput):
@@ -38,7 +41,7 @@ class EmailProof(EmailInput):
 
 
 class EmailRegistration(Registration, EmailProof):
-    invitation: Annotated[str, StringConstraints(max_length=96)] | None = None
+    invitation: InvitationCode | None = None
 
 
 class ResetPassword(EmailProof):
@@ -65,22 +68,24 @@ def options(request: Request):
     return {"email_available": settings.email_mode != "disabled", "registration": settings.registration_policy}
 
 
-def send(request, db, email, purpose, owner=None):
+def send(request, db, email, purpose, *, owner=None, invitation=None):
     return identity.issue(db, request.app.state.settings, request.app.state.mailer, email, purpose,
-                          request.client.host if request.client else "unknown", owner)
+                          request.client.host if request.client else "unknown", owner=owner, invitation=invitation,
+                          session_id=request.state.auth_session_id if owner else None)
 
 
 def consume(request, db, data, purpose, owner=None):
     settings = request.app.state.settings
     limit(request, "email-verify", settings.login_attempts)
-    identity.consume(db, settings, data.request_id, data.email, purpose, data.code, owner)
+    identity.consume(db, settings, data.request_id, data.email, purpose, data.code, owner=owner,
+                     session_id=request.state.auth_session_id if owner else None)
 
 
 @router.post("/auth/email/code", status_code=202, dependencies=browser)
 def request_code(data: SendEmailCode, request: Request, db: Database):
     if data.purpose == "register" and request.app.state.settings.registration_policy == "closed":
         raise ApiError(403, "registration_closed", "当前仅限已有账号登录。")
-    return send(request, db, data.email, data.purpose)
+    return send(request, db, data.email, data.purpose, invitation=data.invitation)
 
 
 @router.post("/auth/email/register", status_code=201, dependencies=browser)
@@ -128,6 +133,7 @@ def reset(data: ResetPassword, request: Request, db: Database):
     if user:
         user.password_hash = password_hash
         revoke_sessions(db, user.id)
+        identity.invalidate_challenges(db, request.app.state.settings, user.id, user.email)
         request.app.state.ai_credentials.remove(user.id)
     db.commit()
 
@@ -164,7 +170,7 @@ def security(request: Request, user: CurrentUser, db: Database):
 
 @router.post("/users/me/security/email/code", status_code=202)
 def request_binding(data: EmailInput, request: Request, user: CurrentUser, db: Database):
-    return send(request, db, data.email, "change" if user.email else "bind", user.id)
+    return send(request, db, data.email, "bind", owner=user.id)
 
 
 @router.put("/users/me/security/email", status_code=204)
@@ -181,6 +187,7 @@ def bind_email(data: BindEmail, request: Request, user: CurrentUser, db: Databas
         db.commit()
         raise ApiError(409, "email_bind_failed", "无法绑定该邮箱，请检查后重试。")
     user.email, user.email_verified_at = data.email, utcnow()
+    identity.invalidate_challenges(db, request.app.state.settings, user.id, previous_email, data.email)
     if previous_email is not None and previous_email != data.email:
         revoke_sessions(db, user.id, keep=current)
         request.app.state.ai_credentials.remove(user.id)
@@ -197,6 +204,7 @@ def change_password(data: ChangePassword, request: Request, user: CurrentUser, d
         raise invalid_session()
     user.password_hash = replacement
     revoke_sessions(db, user.id, keep=current)
+    identity.invalidate_challenges(db, request.app.state.settings, user.id, user.email)
     request.app.state.ai_credentials.remove(user.id)
     db.commit()
 
@@ -232,6 +240,9 @@ def delete_account(data: DeleteAccount, request: Request, user: CurrentUser, db:
                           .where(MediaDerivative.user_id == user.id))
     keys = {key for group in (media, variants) for row in group for key in row if key}
     request.app.state.ai_credentials.remove(user.id)
+    identity.invalidate_challenges(db, request.app.state.settings, user.id, user.email)
+    db.execute(update(AiUsageLog).where(AiUsageLog.user_id == user.id, AiUsageLog.status == "reserved")
+               .values(status="not_sent", error_code="ai_account_deleted"))
     db.delete(user)
     db.commit()
     request.app.state.storage.discard(*keys)

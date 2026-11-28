@@ -40,9 +40,17 @@ def verified_account(db, email):
 
 
 def login(db: Session, data: Login, settings: Settings, passwords: Passwords, *, device=None):
-    user = verified_account(db, data.username) if "@" in data.username else db.scalar(
-        select(User).where(User.username == data.username))
+    email_login = "@" in data.username
+    user = verified_account(db, data.username) if email_login else db.scalar(select(User).where(User.username == data.username))
     if not passwords.verify(data.password, user.password_hash if user and user.is_active else None):
+        raise ApiError(401, "invalid_credentials", "用户名或密码不正确。")
+    # Serialize against password reset, email replacement and deletion before issuing a session.
+    table = User.__table__
+    identity = (table.c.email == data.username) & table.c.email_verified_at.is_not(None) if email_login else table.c.username == data.username
+    locked = db.execute(update(table).where(table.c.id == user.id, identity, table.c.is_active.is_(True),
+                                           table.c.password_hash == user.password_hash)
+                        .values(updated_at=table.c.updated_at))
+    if locked.rowcount != 1:
         raise ApiError(401, "invalid_credentials", "用户名或密码不正确。")
     return new_session(db, user, settings, device=device)
 

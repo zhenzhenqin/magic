@@ -1,10 +1,13 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const screenshots = process.env.FOODDIARY_BROWSER_SHARING_REAL === '1'
-const screenshotDir = fileURLToPath(new URL('../../docs/screenshots/phase-6/', import.meta.url))
+const screenshotDir = process.env.FOODDIARY_SHARING_EVIDENCE
+  ?? fileURLToPath(new URL('../../docs/screenshots/phase-6/', import.meta.url))
 const fixtures = new URL('../../docs/ai-benchmark/images/', import.meta.url)
 const base = '/api/v1/friends/'
 
@@ -35,7 +38,8 @@ async function snap(page: Page, name: string, fullPage = false) {
     window.scrollTo(0, 0)
     await document.fonts.ready
   })
-  await page.screenshot({ path: screenshotDir + name + '.png', fullPage, animations: 'disabled' })
+  await mkdir(screenshotDir, { recursive: true })
+  await page.screenshot({ path: join(screenshotDir, name + '.png'), fullPage, animations: 'disabled' })
 }
 
 function today(page: Page) {

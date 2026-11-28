@@ -3,12 +3,14 @@ from hmac import compare_digest, digest
 from secrets import randbelow, token_urlsafe
 from uuid import uuid4
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 
 from app.core.database import utcnow
-from app.core.exceptions import ApiError
+from app.core.exceptions import ApiError, invalid_session
 from app.core.security import token_hash
 from app.models.identity import EmailChallenge, Invitation
+from app.models import User
+from app.services.ai_credentials import active_session
 
 
 def invalid_code():
@@ -23,16 +25,25 @@ def sign(settings, *parts):
     return digest(settings.email_code_secret.get_secret_value().encode(), "\x00".join(parts).encode(), "sha256").hex()
 
 
-def code_digest(settings, row, code):
-    return sign(settings, "code", row.id, row.purpose, row.mail_scope, row.owner_id or "",
-                row.expires_at.isoformat(timespec="microseconds"), code)
+def code_digest(settings, row, code, session_id=None):
+    parts = ("code", row.id, row.purpose, row.mail_scope, row.owner_id or "",
+             row.expires_at.isoformat(timespec="microseconds"), code)
+    return sign(settings, *parts, session_id) if session_id else sign(settings, *parts)
 
 
-def issue(db, settings, mailer, email, purpose, address, owner=None):
+def issue(db, settings, mailer, email, purpose, address, *, owner=None, session_id=None, invitation=None):
     if mailer is None:
         raise ApiError(503, "email_disabled", "邮箱验证暂未开放。")
     begin(db)
     now = utcnow()
+    if owner:
+        if active_session(db, owner, session_id) is None:
+            raise invalid_session()
+        account = db.get(User, owner, populate_existing=True)
+        purpose = "change" if account.email else "bind"
+    if purpose == "register" and settings.registration_policy == "invite":
+        if not invitation or db.scalar(select(Invitation.digest).where(*invitation_match(invitation, now))) is None:
+            raise ApiError(403, "invitation_invalid", "邀请码无效或已不可用。")
     mail_scope, ip_scope = sign(settings, "email", email), sign(settings, "ip", address)
     day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     hour = now - timedelta(hours=1)
@@ -53,7 +64,7 @@ def issue(db, settings, mailer, email, purpose, address, owner=None):
     code = f"{randbelow(1_000_000):06d}"
     row = EmailChallenge(id=str(uuid4()), owner_id=owner, mail_scope=mail_scope, ip_scope=ip_scope, purpose=purpose,
                          attempts=0, created_at=now, expires_at=now + timedelta(minutes=5))
-    row.digest = code_digest(settings, row, code)
+    row.digest = code_digest(settings, row, code, session_id)
     db.add(row)
     db.commit()
     try:
@@ -65,10 +76,12 @@ def issue(db, settings, mailer, email, purpose, address, owner=None):
     return {"request_id": row.id, "expires_in": 300, "resend_after": 60}
 
 
-def consume(db, settings, identifier, email, purpose, code, owner=None):
+def consume(db, settings, identifier, email, purpose, code, *, owner=None, session_id=None):
     if settings.email_mode == "disabled":
         raise invalid_code()
     begin(db)
+    if owner and active_session(db, owner, session_id) is None:
+        raise invalid_session()
     row = db.get(EmailChallenge, str(identifier))
     now = utcnow()
     expected_mail = sign(settings, "email", email)
@@ -76,20 +89,33 @@ def consume(db, settings, identifier, email, purpose, code, owner=None):
             or row.delivered_at is None or row.expires_at <= now or row.attempts >= 5
             or not compare_digest(row.mail_scope, expected_mail)):
         raise invalid_code()
-    if not compare_digest(row.digest, code_digest(settings, row, code)):
+    if not compare_digest(row.digest, code_digest(settings, row, code, session_id)):
         row.attempts += 1
         db.commit()
         raise invalid_code()
     row.consumed_at = now
 
 
+def invalidate_challenges(db, settings, owner, *emails):
+    scopes = {sign(settings, "email", email) for email in emails if email and settings.email_code_secret}
+    match = [EmailChallenge.owner_id == owner]
+    if scopes:
+        match.append(EmailChallenge.owner_id.is_(None) & EmailChallenge.mail_scope.in_(scopes))
+    db.execute(update(EmailChallenge).where(
+        or_(*match), EmailChallenge.consumed_at.is_(None),
+    ).values(consumed_at=utcnow()))
+
+
+def invitation_match(token, now):
+    return (Invitation.digest == token_hash(token), Invitation.expires_at > now,
+            Invitation.revoked_at.is_(None), Invitation.remaining > 0)
+
+
 def spend_invitation(db, token):
     if not token:
         return False
-    result = db.execute(update(Invitation).where(
-        Invitation.digest == token_hash(token), Invitation.expires_at > utcnow(),
-        Invitation.revoked_at.is_(None), Invitation.remaining > 0,
-    ).values(remaining=Invitation.remaining - 1))
+    result = db.execute(update(Invitation).where(*invitation_match(token, utcnow()))
+                        .values(remaining=Invitation.remaining - 1))
     return result.rowcount == 1
 
 

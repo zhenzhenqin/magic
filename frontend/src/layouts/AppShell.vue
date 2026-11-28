@@ -123,7 +123,7 @@ const isActive = (section: string[]) => section.some(path => route.path === path
   .mobile-account svg { width: 1.05rem; height: 1.05rem; stroke-width: 1.6; }
   .api-theme .navigation { grid-template-columns: 1fr 1.2fr 1fr; background: var(--color-paper); }
   .api-theme .nav-secondary { display: none; }
-  .api-theme .nav-camera { order: 2; min-height: 2.85rem; width: min(100%, 6rem); margin-inline: auto; color: var(--color-sheet); background: var(--color-sage-deep); border-radius: .75rem; flex-direction: row; gap: .4rem; }
+  .api-theme .nav-camera { order: 2; min-height: 3.35rem; width: min(100%, 7.4rem); margin-inline: auto; color: var(--color-sheet); background: var(--color-sage-deep); border-radius: .85rem; flex-direction: row; gap: .5rem; }
   .api-theme .nav-camera .nav-icon { background: none; padding: 0; margin: 0; }
   .api-theme .nav-camera:active { transform: scale(.94); }
   .api-theme .nav-link[href="/catalog"] { order: 3; }

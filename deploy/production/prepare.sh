@@ -68,7 +68,7 @@ case "$action" in
         runuser -u www-data -- test -r "$release/web/index.html"
         runuser -u www-data -- test ! -r "$config"
         runuser -u fooddiary -- test ! -w "$release/backend/.venv"
-        runuser -u fooddiary -- .venv/bin/python -c 'from pathlib import Path; from app.core.config import Settings; s=Settings(); assert s.app_env == "production" and Path(s.db_url.database) == Path("/opt/fooddiary/shared/data/fooddiary.db") and s.media_root == Path("/opt/fooddiary/shared/media"); print("Configuration and service access verified")'
+        runuser -u fooddiary -- .venv/bin/python -c 'from pathlib import Path; from app.core.config import Settings; s=Settings(); assert s.app_env == "production" and Path(s.db_url.database) == Path("/opt/fooddiary/shared/data/fooddiary.db") and s.media_root == Path("/opt/fooddiary/shared/media"); assert not (s.ai_enabled or s.ai_byok_simulation or s.ai_available); print("Configuration, disabled external AI and service access verified")'
         if [[ -x .sticker/bin/python ]]; then
             runuser -u fooddiary -- .sticker/bin/python -c 'import numpy, onnxruntime; assert "CPUExecutionProvider" in onnxruntime.get_available_providers(); print(numpy.__version__, onnxruntime.__version__)'
         fi

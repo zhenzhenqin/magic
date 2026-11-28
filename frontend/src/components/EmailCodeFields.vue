@@ -3,7 +3,7 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 import type { EmailProof, VerificationTicket } from '../api/authRepository'
 import { authMessage } from '../stores/auth'
 
-const props = defineProps<{ send: (email: string) => Promise<VerificationTicket> }>()
+const props = withDefaults(defineProps<{ send: (email: string) => Promise<VerificationTicket>; maySend?: boolean }>(), { maySend: true })
 const proof = defineModel<EmailProof>({ required: true })
 const emailControl = ref<HTMLInputElement>()
 const sending = ref(false)
@@ -26,7 +26,7 @@ function changeCode(code: string) {
 }
 
 async function send() {
-  if (!emailControl.value?.reportValidity() || sending.value || remaining.value) return
+  if (!props.maySend || !emailControl.value?.reportValidity() || sending.value || remaining.value) return
   const email = proof.value.email
   const request = generation
   sending.value = true
@@ -62,7 +62,7 @@ async function send() {
     <div class="code-row">
       <label class="field">邮箱验证码<input :value="proof.code" inputmode="numeric" autocomplete="one-time-code"
         maxlength="6" pattern="[0-9]{6}" required @input="changeCode(($event.target as HTMLInputElement).value)" /></label>
-      <button type="button" class="button" :disabled="sending || remaining > 0" @click="send">
+      <button type="button" class="button" :disabled="!maySend || sending || remaining > 0" @click="send">
         {{ remaining ? remaining + ' 秒后重发' : sending ? '正在发送' : '发送验证码' }}
       </button>
     </div>

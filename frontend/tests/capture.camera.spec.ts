@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { createReadStream } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
@@ -317,4 +318,46 @@ test('另一浏览器只看到已保存且获授权的真实贴纸，撤销后�
     await friendPage.reload()
     await expect(image).toHaveCount(0)
   } finally { await separate.close() }
+})
+
+test('纸页展示一张、两张及五张真实贴纸，长名称和空页不溢出', async ({ page }) => {
+  test.setTimeout(120_000)
+  const { headers } = await login(page)
+  const api = '/api/v1'
+  const fixtures = new URL('../../docs/ai-benchmark/images/', import.meta.url)
+  const files = ['homestyle-lunch.jpg', 'oat-biscuits.jpg', 'tomato-eggs-overhead.jpg',
+    'tomato-eggs-side.jpg', 'homestyle-lunch.jpg']
+  const ids: string[] = []
+  for (const file of files) {
+    const image = await page.request.post(api + '/media/upload', {
+      headers, multipart: { file: createReadStream(fileURLToPath(new URL(file, fixtures))) },
+    })
+    expect(image.status()).toBe(201)
+    const { id } = await image.json()
+    ids.push(id)
+    const job = await page.request.post(api + '/stickers/jobs', { headers, data: { media_id: id } })
+    expect(job.status()).toBe(202)
+  }
+  const samples = [
+    { date: '2026-11-12', title: '家常三菜', count: 1 },
+    { date: '2026-11-13', title: '家常晚餐和燕麦饼干', count: 2 },
+    { date: '2026-11-14', title: '山茶家的周末晚餐和番茄鸡蛋燕麦饼干加时蔬' + ' · 周末慢慢尝'.repeat(3), count: 5 },
+  ]
+  for (const { date, title, count } of samples) {
+    const meal = await page.request.post(api + '/meals', {
+      headers: { ...headers, 'Idempotency-Key': crypto.randomUUID() },
+      data: { local_date: date, local_time: '12:15', timezone: 'Asia/Shanghai', meal_type: 'lunch',
+        items: [{ food_name: title }], media_ids: ids.slice(0, count) },
+    })
+    expect(meal.status()).toBe(201)
+    await page.goto('/?date=' + date)
+    const entry = page.getByRole('button', { name: '查看记录 ' + title })
+    await expect(entry.locator('[data-sticker]')).toHaveCount(count, { timeout: 65_000 })
+    expect(await entry.locator('.scrap-gallery').evaluate(node => node.clientWidth)).toBeGreaterThan(235)
+    expect(await page.locator('body').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    await screen(page, 'phase74-diary-' + count)
+  }
+  await page.goto('/?date=2026-11-15')
+  await expect(page.getByRole('heading', { name: '这一页还留白' })).toBeVisible()
+  await screen(page, 'phase74-diary-empty')
 })
