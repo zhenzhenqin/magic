@@ -27,3 +27,14 @@
 ## 旧业务及宿主机维护
 
 Exam Guardian 的离机归档独立于 FoodDiary。用受信任 SSH 把停运应用、配置、Compose、必要镜像和卷、MariaDB 数据、证书、定时器及 systemd 配置流式移至经批准的 D 盘私有加密目录，逐项核对清单和 SHA-256。隔离核验数据库与 Docker 恢复能力后再安排维护。对单系统盘还需准备云控制台 VNC 或救援入口，并保留足以恢复整机的途径。当前实际归档、迁出与恢复均等待维护范围和目的地确认。
+
+### Exam Guardian 迁出清单和恢复点
+
+1. 核对云控制台打开目标实例的 VNC 并能登录系统。授权范围确认后，将 `D:/DevEnv/fooddiary-private-backups/exam-guardian` 作为建议归档目录，设置仅用户与必要恢复人员可读的 ACL。可用接收方已确认的 GPG 公钥，或由用户独立保管对称口令。先用小样验证加密、解密和校验，避免在普通 D 盘目录落明文归档。
+2. 保持原有 7 个容器和宿主 MariaDB 停运。源目录包括 `/opt/exam-guardian-lab`、`/var/lib/exam-guardian-lab` 的业务子目录、`/var/lib/mysql`、`/etc/mysql`、`/etc/letsencrypt`、Docker 的 `exam-guardian-lab_db` 卷，以及相关 systemd、定时任务和反代配置。交换文件可在恢复时重新创建。记录安装包及系统版本、APT 源、原服务启用状态、容器配置、镜像标签与镜像 ID。容器检查输出可能包含凭据，直接加入加密归档。
+3. 使用经严格主机校验的 SSH 流式归档。文件、MariaDB 物理副本和 Docker 卷保留数字所有者、模式、链接与适用的扩展属性。镜像用 `docker image save` 归档。对每个容器核对 `docker diff`，如有无法从镜像、卷和配置重建的内容，另保留该容器的根文件系统导出。以目录清单与文件摘要核对归档，密文在目标位置计算 SHA-256。传输失败的分卷不登记为恢复点。
+4. 还原至隔离、受访问控制的 D 盘工作区，禁止与当前 Docker 卷同名或者启用原业务定时器。用与源相容的 MariaDB 版本，仅本地 Unix socket 启动数据库副本，核对数据库列表、关键表与抽样行数。恢复镜像和卷，在隔离网络中检查 Compose 可解析、应用可读取配置和代表性业务文件，检查证书、私钥与文件权限。记录恢复测试结果、原始发布版本和必要的云控制台恢复路径。维护开始前保留全部原数据和已验证归档。
+
+定向只读统计显示应用目录 610.1 MiB，排除交换文件后业务目录 59.5 MiB，宿主 MariaDB 113.2 MiB，Docker 卷 251.6 MiB，4 个镜像的 API 报告大小合计 746.2 MiB。现存 7 个容器的可写层各约 12–102 kB。基础合计约 1.74 GiB，实际归档大小仍受镜像导出、容器额外文件和压缩影响。保留 24 GiB 本地空间用于密文与隔离恢复足以覆盖目前的保守预算。以 2 Mbit/s 持续传输 1.74 GiB 理论约 2.1 小时，依实际出口波动、压缩和镜像导出结果决定维护开始时间。 [华为云 VNC 操作](https://support.huaweicloud.com/usermanual-flexusl/server_login_0002.html)
+
+原地维护优先按照官方指南分段执行 `bullseye` → `bookworm` → `trixie`。每段先审查第三方软件源与模拟安装结果，再进行最小升级、完整升级和获准重启，逐段确认 VNC、SSH、新运行内核、系统服务、Docker、MariaDB 数据及旧项目停运状态。失败时保留恢复点，按照该段问题从控制台恢复。重装需要云端可用的 Debian 13 镜像，风险集中于单盘内容被覆盖与主机密钥更换，只有独立备份恢复通过并另有授权时才采用。 [Debian 12 升级](https://www.debian.org/releases/bookworm/amd64/release-notes/ch-upgrading.en.html) · [Debian 13 升级](https://www.debian.org/releases/trixie/release-notes/upgrading.en.html)

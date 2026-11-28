@@ -24,3 +24,9 @@ API 模式拍摄照片上传后自动排队。浏览器由真实裁切透明图�
 - 文件使用私有键及授权读取路径。图鉴封面须来自现有餐次。未跟踪文件由 dry-run 清理报告。公开仓库仅纳入授权的照片示例和截图。
 
 完整 rembg 安装遇到大体积依赖下载停滞，实际推理保留其 u2netp 权重和预处理算法，使用 ONNX Runtime CPU 与 Pillow。默认外边长 768，模型内部输入为 320×320。模型判断显著前景，可能留下餐具或把非食物当作主体。 [真实视觉与性能](PHASE-5.md)
+
+### U²-NetP 私测用权重
+
+现有 `u2netp.onnx` 大小 4,574,861 字节。实测 MD5 `8e83ca70e441ab06c318d82300c84806` 与 rembg 下载器校验值一致。项目用更强的 SHA-256 `309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8` 运行时复验。rembg 模型目录将该 ONNX 产物直接追溯到 U²-Net 上游。上游作者对公开模型与代码适用同一许可有明确答复，仓库许可为 Apache-2.0。已知训练集为 DUTS，其公开说明没有给出一项可以替代模型许可的条款。 [rembg 转换文件来源](https://github.com/danielgatis/rembg/blob/main/rembg/sessions/u2netp.py) · [rembg 上游映射](https://github.com/danielgatis/rembg#models) · [作者说明](https://github.com/xuebinqin/U-2-Net/issues/208) · [Apache-2.0](https://github.com/xuebinqin/U-2-Net/blob/master/LICENSE) · [DUTS](https://saliencydetection.net/duts/)
+
+据此保留该 4.36 MiB 权重作为非公开服务器端内测首选。在授权部署时，权重从服务器私有模型目录加载，随部署保存 Apache-2.0 文本、U²-Net 论文及作者署名、转换出处和摘要。仓库、站点和内测用户设备只接收业务图像。公网商业使用或权重再分发另核对适用条件和原始转换链，当前未向云主机传输或启用权重。

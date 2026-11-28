@@ -32,6 +32,14 @@ Nginx 模板由 `render-nginx.py` 生成独立站点，包含 HTTPS、固定主�
 
 相机需要页面本身的受信任 HTTPS。入口验证同时检查 `Permissions-Policy` 的 `camera=(self)`，以及 `Content-Security-Policy` 对 Blob 预览和实时媒体的允许范围。 [相机权限与兼容](CAMERA.md)
 
+### 手机私网内测
+
+1. 有合规公网入口后才开放 80 和 443。无域名时，免费 IP 证书仍须先满足华为云大陆接入条件。暂未满足时使用下述授权成员私网，不配置公网网站入口。 [华为云备案说明](https://support.huaweicloud.com/icp_faq/icp_05_0145.html) · [Let's Encrypt IP 证书](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)
+2. 使用现有私网或个人用途免费 Tailscale 网络。Tailscale 方案需要手机安装客户端并登录获准账号。只允许指定成员的设备访问标记为 FoodDiary 的节点 TCP 443，去除默认全网互通授权。确认上海实例和手机网络都能连接，包括直连或中继。禁用 Funnel，保留原有 SSH 22。 [Tailscale Grants](https://tailscale.com/docs/features/access-control/grants) · [个人方案](https://tailscale.com/pricing)
+3. 在节点上获取 MagicDNS 实际全名，用 `tailscale cert` 生成浏览器信任证书。节点名称会出现在证书透明度日志，签发前使用不含私人信息的名称。Nginx 仅监听私网地址和回环，继续核对 `APP_ORIGINS`、Secure Cookie、真实 TLS、相机权限以及维护门禁。定时续签后先验 `nginx -t` 再重载。交付实测的 `https://<实际节点>.<实际网络>.ts.net`，当前尚未取得可访问的 URL。用户手机无需安装自签 CA。 [Tailscale HTTPS](https://tailscale.com/docs/how-to/set-up-https-certificates)
+4. 对 Android Chrome 和 iPhone Safari 分别登录两个内测账号，从实际后置取景、换镜、重拍、拒绝权限和后台恢复，到上传、轮廓、贴纸、保存、刷新与好友同步。断网后恢复并检查只写入一条记录。用第三账号验证不可访问，并确认撤销授权后旧媒体地址失效、离开相机后系统停止使用镜头。手机测试只用获准样例，脱敏截图和视频留在 D 盘。
+5. 备案及公网接入就绪后，新建公网 HTTPS 入口与精确 Origin，在同一发布版本上核验 TLS、账号重新登录、贴纸、撤销与备份。原私网入口可作为管理和恢复渠道，FastAPI 仍仅监听回环。
+
 ## 配置、密钥和账号
 
 使用 `deploy/production/fooddiary.env.example`。正式文件通过安全渠道放在私有目录中，使用独立高熵 JWT 密钥，明确填写 `APP_ORIGINS` 中的 HTTPS 域名或 IP，确认 SQLite 与媒体路径为绝对路径。保留 `PUBLIC_REGISTRATION=false`。生产拒绝 Fake Provider，初始 AI 两家累计上限均为 0、服务停用。贴纸服务初始停用，待权重部署许可和服务器内存验证后再启用。应用上传仍校验每张 10 MiB、2000 万像素，使用全局磁盘保留空间。
