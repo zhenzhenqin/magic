@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import re
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -9,7 +10,7 @@ from starlette.exceptions import HTTPException
 
 from app.api.v1 import router
 from app.api import ai, catalog, diary, friends, media, stickers
-from app.core.config import Settings
+from app.core.config import BACKEND_DIR, Settings
 from app.core.database import build_engine
 from app.core.exceptions import ApiError, api_error, http_error, problem, unexpected_error, validation_error
 from app.core.security import Passwords, RateLimiter
@@ -26,6 +27,12 @@ async def database_error(_, error: OperationalError):
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     engine = build_engine(settings.db_url)
+    revision = None
+    marker = BACKEND_DIR.parent / "REVISION"
+    if settings.app_env == "production" and marker.is_file():
+        revision = marker.read_text(encoding="ascii").strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise ValueError("Invalid deployed revision")
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -59,6 +66,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response = await call_next(request)
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
+        if revision and request.url.path in ("/api/v1/health", "/api/v1/ready"):
+            response.headers["X-FoodDiary-Revision"] = revision
         return response
 
     app.include_router(router, prefix="/api/v1")

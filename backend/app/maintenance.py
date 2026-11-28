@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from hashlib import file_digest
 import json
 from pathlib import Path
+import re
 from shutil import copyfile, disk_usage, rmtree
 import sqlite3
 import tempfile
@@ -16,10 +17,12 @@ from alembic.config import Config
 from app.core.config import BACKEND_DIR, Settings
 from app.core.database import build_engine
 from app.services.storage import FILE_KEY
+from app.services.ai_control import processing_identity
 
 MANIFEST = "manifest.json"
 DATABASE = "fooddiary.db"
 SCHEMA = 1
+DAILY = re.compile(r"daily-[0-9]{8}T[0-9]{6}-[0-9]+")
 
 
 def private_file(path):
@@ -209,6 +212,36 @@ def restore(root, target, reserve):
     new_tree(target, build)
 
 
+def retain_daily(root, newest):
+    if not DAILY.fullmatch(newest.name) or newest.parent != root or root.resolve() != root:
+        raise ValueError("Retention requires a daily point in the explicit backup root")
+    points = sorted((p for p in root.iterdir() if DAILY.fullmatch(p.name)
+                     and p.is_dir() and not p.is_symlink()), reverse=True)
+    if not points or not newest.is_dir() or newest != points[0]:
+        raise ValueError("Retention requires the latest daily recovery point")
+    verify(newest)
+    for point in points[3:]:
+        marker = point / MANIFEST
+        if marker.is_file() and not marker.is_symlink():
+            data = json.loads(private_file(marker).read_text(encoding="utf-8"))
+            if data.get("format") == SCHEMA and {"database", "media", "created_at"} <= data.keys():
+                rmtree(point)
+                print(f"Removed expired FoodDiary daily point {point.name}")
+
+
+def worker_ready(unit, since):
+    settings = Settings()
+    # Parse nanoseconds from GNU date, matching the precision of stored UTC times.
+    start = datetime.fromisoformat(since).astimezone(UTC).replace(tzinfo=None).isoformat(" ")
+    with closing(readonly(Path(settings.db_url.database).resolve())) as db:
+        if unit == "fooddiary-sticker.service" and settings.sticker_enabled:
+            return db.execute("SELECT 1 FROM sticker_runtime WHERE id=1 AND heartbeat>=?", (start,)).fetchone() is not None
+        if unit == "fooddiary-ai.service" and settings.ai_available:
+            return db.execute("SELECT 1 FROM ai_worker_heartbeats WHERE configuration=? AND checked_at>=?",
+                              (processing_identity(settings), start)).fetchone() is not None
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reserve-bytes", type=int, default=2 * 1024**3)
@@ -229,6 +262,12 @@ def main():
     seal.add_argument("source", type=Path)
     migrate = commands.add_parser("migrate-candidate", help="upgrade an isolated copy before activation")
     migrate.add_argument("source", type=Path)
+    retain = commands.add_parser("retain-daily")
+    retain.add_argument("root", type=Path)
+    retain.add_argument("newest", type=Path)
+    worker = commands.add_parser("worker-ready")
+    worker.add_argument("unit", choices=("fooddiary-sticker.service", "fooddiary-ai.service"))
+    worker.add_argument("since")
     args = parser.parse_args()
     if args.command == "backup":
         backup(args.database.absolute(), args.media.absolute(), args.target.absolute(), args.reserve_bytes, args.release)
@@ -242,6 +281,11 @@ def main():
         seal_database(args.source.absolute())
     elif args.command == "migrate-candidate":
         migrate_candidate(args.source.absolute())
+    elif args.command == "retain-daily":
+        retain_daily(args.root.absolute(), args.newest.absolute())
+    elif args.command == "worker-ready":
+        if not worker_ready(args.unit, args.since):
+            parser.exit(1)
     else:
         with closing(readonly(args.source.absolute())) as db:
             check_sqlite(db)

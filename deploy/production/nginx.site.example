@@ -31,6 +31,14 @@ server {
 
     include /etc/nginx/fooddiary/security.conf;
     add_header Cache-Control "no-store" always;
+    error_page 503 = @fooddiary_maintenance;
+
+    location @fooddiary_maintenance {
+        include /etc/nginx/fooddiary/security.conf;
+        add_header Cache-Control "no-store" always;
+        add_header X-FoodDiary-Maintenance "1" always;
+        return 503;
+    }
 
     location ^~ /api/ {
         include /etc/nginx/fooddiary/security.conf;

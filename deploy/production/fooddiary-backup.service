@@ -1,0 +1,11 @@
+[Unit]
+Description=FoodDiary verified daily SQLite and media backup
+After=fooddiary-api.service
+ConditionPathExists=/opt/fooddiary/current/REVISION
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /opt/fooddiary/current/deploy/production/manage.sh backup --keep-three
+UMask=0077
+Nice=10
+TimeoutStartSec=30min

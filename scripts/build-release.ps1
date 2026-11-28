@@ -1,4 +1,4 @@
-param([string]$OutputRoot = 'D:\DevEnv\fooddiary-phase7\releases')
+param([string]$OutputRoot = 'D:\DevEnv\fooddiary-phase72\releases')
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -23,6 +23,10 @@ try {
     Remove-Item -LiteralPath $archive
     Copy-Item -LiteralPath (Join-Path $root 'frontend/dist') -Destination (Join-Path $stage 'web') -Recurse
     [IO.File]::WriteAllText((Join-Path $stage 'REVISION'), $sha + "`n")
+    $python = Join-Path $root 'backend/.venv/Scripts/python.exe'
+    $manifest = Join-Path $stage 'deploy/production/release-manifest.py'
+    & $python $manifest write $stage $sha
+    if ($LASTEXITCODE -ne 0) { throw 'Could not write release checksums.' }
     [IO.Directory]::Move($stage, $target)
     $target
 } finally {

@@ -13,6 +13,7 @@ from pydantic import ValidationError
 import pytest
 
 from app import maintenance
+from app import main
 from app.core.config import Settings
 from app.core.security import COOKIE_NAME
 from app.main import create_app
@@ -203,3 +204,36 @@ def test_migration_candidate_failure_preserves_live_release(settings, tmp_path, 
     maintenance.migrate_candidate(good)
     with closing(maintenance.readonly(good)) as db:
         assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("0008_friend_sharing",)
+
+
+def test_running_release_identity_follows_the_release_at_start(settings, tmp_path, monkeypatch):
+    settings = production(settings)
+    migrate(settings)
+    marker = tmp_path / "REVISION"
+    marker.write_text("1" * 40)
+    monkeypatch.setattr(main, "BACKEND_DIR", tmp_path / "backend")
+    app = main.create_app(settings)
+    marker.write_text("2" * 40)
+    with TestClient(app, base_url=HTTPS) as client:
+        for path in ("health", "ready"):
+            assert client.get(API + "/" + path).headers["x-fooddiary-revision"] == "1" * 40
+        assert "x-fooddiary-revision" not in client.get(API + "/friends").headers
+
+
+def test_daily_retention_requires_latest_verified_point_and_preserves_other_data(settings, tmp_path):
+    migrate(settings)
+    database = Path(settings.db_url.database).resolve()
+    settings.media_root.mkdir()
+    points = [tmp_path / f"daily-2026112{day}T043000-911" for day in range(4)]
+    for point in points:
+        maintenance.backup(database, settings.media_root, point, 0, "retention-fixture")
+    release = tmp_path / "release-20261120T043000-911"
+    release.mkdir()
+    unrelated = tmp_path / "daily-20261119T043000-911"
+    unrelated.mkdir()
+    with pytest.raises(ValueError, match="latest"):
+        maintenance.retain_daily(tmp_path, points[-2])
+    assert all(point.exists() for point in points)
+    maintenance.retain_daily(tmp_path, points[-1])
+    assert not points[0].exists() and all(point.exists() for point in points[1:])
+    assert release.exists() and unrelated.exists()

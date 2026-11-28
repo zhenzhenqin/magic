@@ -134,7 +134,8 @@ def check(config_dir, root, binary, upstream_port):
         denied = call("/api/v1/media/upload", body=b"x" * 10616833, headers=("Expect: 100-continue",))
         assert denied[0] == 413 and denied[1]["cache-control"] == "no-store"
         (root / "shared" / "maintenance").touch()
-        assert call("/api/v1/ready")[0] == 503 and call("/")[0] == 503
+        maintenance = call("/api/v1/ready")
+        assert maintenance[0] == 503 and maintenance[1]["x-fooddiary-maintenance"] == "1" and call("/")[0] == 503
         print("Nginx template: TLS, redirects, SPA/assets, private responses, trusted forwarding, 413 and maintenance passed")
     finally:
         process.terminate()

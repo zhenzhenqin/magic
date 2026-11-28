@@ -35,9 +35,10 @@ case "$action" in
             exit 1
         fi
         [[ -f $release/web/index.html && -d $release/backend/app ]]
+        "$python" "$release/deploy/production/release-manifest.py" verify "$release" "$2" --prepared
         wheelhouse=$(realpath "$3")
         config="$root/shared/config/fooddiary.env"
-        [[ -f $config && $(stat -c %a "$config") == 640 && $(stat -c %U:%G "$config") == root:fooddiary ]]
+        [[ -f $config && ! -L $config && $(stat -c %a "$config") == 640 && $(stat -c %U:%G "$config") == root:fooddiary ]]
         if [[ -L $release/.env ]]; then
             [[ $(readlink "$release/.env") == "$config" ]]
         else
@@ -49,13 +50,24 @@ case "$action" in
         cd "$release/backend"
         for directory in "${environments[@]}"; do
             [[ ! -L $directory ]]
-            "$python" -m venv "$directory"
             requirements=(-r requirements.txt)
             if [[ $directory == .sticker ]]; then requirements+=(-r requirements-sticker.txt); fi
-            "$directory/bin/python" -m pip --disable-pip-version-check --no-cache-dir install \
-                --no-index --find-links "$wheelhouse" --only-binary=:all: "${requirements[@]}"
+            (
+                umask 022
+                "$python" -m venv "$directory"
+                "$directory/bin/python" -m pip --disable-pip-version-check --no-cache-dir install \
+                    --no-index --find-links "$wheelhouse" --only-binary=:all: "${requirements[@]}"
+            )
             "$directory/bin/python" -m pip check
         done
+        # Runtime files are readable by their consumers and writable by root only.
+        chown -Rh root:root "$release"
+        chmod 0755 "$release"
+        find "$release/backend" "$release/deploy" "$release/web" -xdev -type d -exec chmod 0755 {} +
+        find "$release/backend" "$release/deploy" "$release/web" -xdev -type f -exec chmod a+r,go-w {} +
+        runuser -u www-data -- test -r "$release/web/index.html"
+        runuser -u www-data -- test ! -r "$config"
+        runuser -u fooddiary -- test ! -w "$release/backend/.venv"
         runuser -u fooddiary -- .venv/bin/python -c 'from pathlib import Path; from app.core.config import Settings; s=Settings(); assert s.app_env == "production" and Path(s.db_url.database) == Path("/opt/fooddiary/shared/data/fooddiary.db") and s.media_root == Path("/opt/fooddiary/shared/media"); print("Configuration and service access verified")'
         if [[ -x .sticker/bin/python ]]; then
             runuser -u fooddiary -- .sticker/bin/python -c 'import numpy, onnxruntime; assert "CPUExecutionProvider" in onnxruntime.get_available_providers(); print(numpy.__version__, onnxruntime.__version__)'

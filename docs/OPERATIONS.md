@@ -2,7 +2,7 @@
 
 ## 健康和版本
 
-服务内用 `deploy/production/health.sh local` 核对进程和 SQLite 就绪。入口验收使用 `health.sh https <HOST>` 检查 TLS 主机名、证书信任和反代。就绪检查只读取库结构。实际账户登录、上传、共享和媒体绝对路径要用内测账号单独验证。通过 `readlink /opt/fooddiary/current` 和版本下的 `REVISION` 核对发布 SHA。
+服务内用 `sudo bash deploy/production/health.sh local <SHA>` 核对 systemd 主 PID、唯一回环监听、运行版本和 SQLite 就绪。入口验收使用 `bash health.sh https <HOST> <SHA>` 检查 TLS 主机名、证书信任和反代。就绪检查只读取库结构。实际账户登录、上传、共享和媒体绝对路径要用内测账号单独验证。通过 `readlink /opt/fooddiary/current` 和版本下的 `REVISION` 核对发布 SHA。
 
 API 使用一个进程。建议用 `journalctl -u fooddiary-api`、`journalctl -u fooddiary-sticker` 检查服务，确认日志随宿主 journald 上限与保留期滚动。Nginx 关闭本站访问日志以减少私人路径和查找标识留存，错误日志沿用宿主轮换。管理日志用独立目录，可限定 systemd 日志速率。需要详细排查时使用隔离测试数据。
 
@@ -17,6 +17,8 @@ API 使用一个进程。建议用 `journalctl -u fooddiary-api`、`journalctl -
 
 发布由管理锁串行执行。预检包括目标文件、SHA、入口配置。维护标记拒绝新的公网请求，再停止原先活跃的 FoodDiary 服务。创建和验证恢复点，将副本迁移并执行 SQLite 完整性和模型检查，最后原子写入数据库路径和版本链接。只在本地就绪检查通过后结束维护。
 
-候选迁移失败时保留现有数据库和代码版本。启动检查失败时，在维护期间自动尝试复位原数据库、版本链接与曾经活跃的服务。若自动复位失败，维护标记保留，管理员可结合 journal 与备份完成隔离核对。排除问题后才允许删除项目维护标记。项目发布脚本只停止 FoodDiary 自己的三个服务。
+候选迁移失败时保留现有数据库和代码版本。新进程失败时，先停止并核对三个写入单元，再将失败数据库和 sidecar 隔离并恢复旧数据库、版本链接及曾经活跃的服务。原 API 版本确认就绪，且之前已启用的 Worker 均产生新心跳后才恢复流量。首次安装失败会保留维护状态，可重新提交校验过的版本。
+
+操作受同一把锁串行控制。异常中断后，在管理锁释放且排查失败原因后执行 `bash deploy/production/manage.sh recover`。状态保存在 root 私有日志目录，回滚参照该记录。若已记录提交成功，恢复只检查当前健康并完成收尾，避免覆盖已接受的新写入。回滚失败时使用保留的恢复点和隔离文件继续核对。项目脚本只操作 FoodDiary 的服务和目录。
 
 已经对用户开放的版本，回滚应尽量保留实时数据库。先封闭入口并确认旧版能读当前 schema，使用经审核的旧 SHA 重新发布。跨越不兼容数据库版本须先克隆到隔离目录演练。旧备份的会话、好友授权和费用数据需要安全处理，应用恢复不能用旧数据覆盖未核对的当前账本。 [安全恢复](BACKUP-RESTORE.md)
